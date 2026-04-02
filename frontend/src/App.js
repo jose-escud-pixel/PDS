@@ -1071,16 +1071,625 @@ function EstadisticasView() {
   );
 }
 
-// Simplified other views
-function ProductosView({ user }) { const [productos, setProductos] = useState([]); const [loading, setLoading] = useState(true); const [search, setSearch] = useState(''); useEffect(() => { api.getProductos(search ? { search } : {}).then(r => setProductos(r.data.productos || [])).finally(() => setLoading(false)); }, [search]); return (<div className="space-y-6" data-testid="productos-view"><div className="flex items-center justify-between"><h2 className="text-2xl font-heading font-semibold">Productos</h2></div><div className="relative max-w-md"><MagnifyingGlass size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" /><input type="text" placeholder="Buscar..." value={search} onChange={(e) => setSearch(e.target.value)} className="form-input pl-10" /></div><div className="bg-white border border-border rounded-md overflow-hidden"><table className="data-table"><thead><tr><th>Código</th><th>Nombre</th><th>Categoría</th><th className="text-right">Precio</th><th className="text-center">Stock</th></tr></thead><tbody>{loading ? <tr><td colSpan={5} className="text-center py-8">Cargando...</td></tr> : productos.length === 0 ? <tr><td colSpan={5} className="text-center py-8">Sin productos</td></tr> : productos.map(p => (<tr key={p.id}><td className="font-mono text-sm">{p.codigo}</td><td className="font-medium">{p.nombre}</td><td><span className="badge bg-muted text-foreground">{p.categoria}</span></td><td className="text-right price-gs">{formatGs(p.precio_con_iva)}</td><td className="text-center"><span className={p.stock < p.stock_minimo ? 'text-red-600 font-semibold' : 'text-green-600'}>{p.stock}</span></td></tr>))}</tbody></table></div></div>); }
-function VentasView() { const [ventas, setVentas] = useState([]); const [loading, setLoading] = useState(true); useEffect(() => { api.getVentas({}).then(r => setVentas(r.data.ventas || [])).finally(() => setLoading(false)); }, []); return (<div className="space-y-6" data-testid="ventas-view"><h2 className="text-2xl font-heading font-semibold">Ventas</h2><div className="bg-white border border-border rounded-md"><table className="data-table"><thead><tr><th>Fecha</th><th>Cliente</th><th className="text-right">Total</th><th className="text-right">Utilidad</th></tr></thead><tbody>{loading ? <tr><td colSpan={4} className="text-center py-8">Cargando...</td></tr> : ventas.length === 0 ? <tr><td colSpan={4} className="text-center py-8">Sin ventas</td></tr> : ventas.map(v => (<tr key={v.id}><td>{new Date(v.fecha).toLocaleDateString('es-PY')}</td><td className="font-medium">{v.cliente_nombre}</td><td className="text-right price-gs">{formatGs(v.total)}</td><td className="text-right price-gs text-green-600">{formatGs(v.utilidad)}</td></tr>))}</tbody></table></div></div>); }
-function ComprasView() { const [compras, setCompras] = useState([]); const [loading, setLoading] = useState(true); useEffect(() => { api.getCompras({}).then(r => setCompras(r.data.compras || [])).finally(() => setLoading(false)); }, []); return (<div className="space-y-6" data-testid="compras-view"><h2 className="text-2xl font-heading font-semibold">Compras</h2><div className="bg-white border border-border rounded-md"><table className="data-table"><thead><tr><th>Fecha</th><th>Proveedor</th><th>Factura</th><th className="text-right">Total</th></tr></thead><tbody>{loading ? <tr><td colSpan={4} className="text-center py-8">Cargando...</td></tr> : compras.length === 0 ? <tr><td colSpan={4} className="text-center py-8">Sin compras</td></tr> : compras.map(c => (<tr key={c.id}><td>{new Date(c.fecha).toLocaleDateString('es-PY')}</td><td className="font-medium">{c.proveedor_nombre}</td><td>{c.factura || '-'}</td><td className="text-right price-gs">{formatGs(c.total)}</td></tr>))}</tbody></table></div></div>); }
-function ClientesView() { const [clientes, setClientes] = useState([]); const [loading, setLoading] = useState(true); useEffect(() => { api.getClientes({}).then(r => setClientes(r.data.clientes || [])).finally(() => setLoading(false)); }, []); return (<div className="space-y-6" data-testid="clientes-view"><h2 className="text-2xl font-heading font-semibold">Clientes</h2><div className="bg-white border border-border rounded-md"><table className="data-table"><thead><tr><th>Nombre</th><th>Teléfono</th><th>Ciudad</th><th className="text-right">Total</th></tr></thead><tbody>{loading ? <tr><td colSpan={4} className="text-center py-8">Cargando...</td></tr> : clientes.map(c => (<tr key={c.id}><td className="font-medium">{c.nombre}</td><td>{c.telefono || '-'}</td><td>{c.ciudad || '-'}</td><td className="text-right price-gs">{formatGs(c.total_compras || 0)}</td></tr>))}</tbody></table></div></div>); }
-function ProveedoresView() { const [proveedores, setProveedores] = useState([]); const [loading, setLoading] = useState(true); useEffect(() => { api.getProveedores({}).then(r => setProveedores(r.data.proveedores || [])).finally(() => setLoading(false)); }, []); return (<div className="space-y-6" data-testid="proveedores-view"><h2 className="text-2xl font-heading font-semibold">Proveedores</h2><div className="bg-white border border-border rounded-md"><table className="data-table"><thead><tr><th>Nombre</th><th>Contacto</th><th>Teléfono</th><th className="text-right">Total</th></tr></thead><tbody>{loading ? <tr><td colSpan={4} className="text-center py-8">Cargando...</td></tr> : proveedores.map(p => (<tr key={p.id}><td className="font-medium">{p.nombre}</td><td>{p.contacto || '-'}</td><td>{p.telefono || '-'}</td><td className="text-right price-gs">{formatGs(p.total_compras || 0)}</td></tr>))}</tbody></table></div></div>); }
-function GastosView() { const [gastos, setGastos] = useState([]); const [loading, setLoading] = useState(true); useEffect(() => { api.getGastos({}).then(r => setGastos(r.data.gastos || [])).finally(() => setLoading(false)); }, []); const total = gastos.reduce((s, g) => s + (g.monto || 0), 0); return (<div className="space-y-6" data-testid="gastos-view"><div><h2 className="text-2xl font-heading font-semibold">Gastos</h2><p className="text-muted-foreground">Total: {formatGs(total)}</p></div><div className="bg-white border border-border rounded-md"><table className="data-table"><thead><tr><th>Fecha</th><th>Categoría</th><th>Descripción</th><th className="text-right">Monto</th></tr></thead><tbody>{loading ? <tr><td colSpan={4} className="text-center py-8">Cargando...</td></tr> : gastos.map(g => (<tr key={g.id}><td>{new Date(g.fecha).toLocaleDateString('es-PY')}</td><td><span className="badge bg-orange-100 text-orange-800">{g.categoria}</span></td><td>{g.descripcion}</td><td className="text-right price-gs">{formatGs(g.monto)}</td></tr>))}</tbody></table></div></div>); }
+// ==================== PRODUCTOS VIEW ====================
+function ProductosView({ user }) {
+  const [productos, setProductos] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+  const [showModal, setShowModal] = useState(false);
+  const [showAjusteModal, setShowAjusteModal] = useState(null);
+  const [editItem, setEditItem] = useState(null);
+  const [categorias, setCategorias] = useState([]);
+  const [form, setForm] = useState({ codigo: '', nombre: '', variante: '', categoria: '', proveedor: '', precio_con_iva: 0, costo: 0, stock: 0, stock_minimo: 2, iva_pct: 10, margen: 15 });
+  const [ajusteForm, setAjusteForm] = useState({ cantidad: 0, motivo: '' });
+  const isAdmin = user?.role === 'admin';
+
+  const loadData = useCallback(() => {
+    setLoading(true);
+    Promise.all([
+      api.getProductos(search ? { search } : {}),
+      api.getCategorias()
+    ]).then(([p, c]) => {
+      setProductos(p.data.productos || []);
+      setCategorias(c.data.categorias || []);
+    }).finally(() => setLoading(false));
+  }, [search]);
+
+  useEffect(() => { loadData(); }, [loadData]);
+
+  const openNew = () => { setEditItem(null); setForm({ codigo: '', nombre: '', variante: '', categoria: categorias[0] || '', proveedor: '', precio_con_iva: 0, costo: 0, stock: 0, stock_minimo: 2, iva_pct: 10, margen: 15 }); setShowModal(true); };
+  const openEdit = (p) => { setEditItem(p); setForm({ codigo: p.codigo, nombre: p.nombre, variante: p.variante || '', categoria: p.categoria, proveedor: p.proveedor || '', precio_con_iva: p.precio_con_iva, costo: p.costo, stock: p.stock, stock_minimo: p.stock_minimo, iva_pct: p.iva_pct || 10, margen: p.margen || 15 }); setShowModal(true); };
+
+  const handleSave = async () => {
+    try {
+      if (editItem) { await api.updateProducto(editItem.id, form); }
+      else { await api.createProducto(form); }
+      setShowModal(false); loadData();
+    } catch (e) { alert(formatApiError(e.response?.data?.detail)); }
+  };
+
+  const handleDelete = async (id) => {
+    if (!window.confirm('¿Eliminar este producto?')) return;
+    try { await api.deleteProducto(id); loadData(); } catch (e) { alert(formatApiError(e.response?.data?.detail)); }
+  };
+
+  const handleAjuste = async () => {
+    try { await api.ajustarStock(showAjusteModal.id, ajusteForm); setShowAjusteModal(null); loadData(); }
+    catch (e) { alert(formatApiError(e.response?.data?.detail)); }
+  };
+
+  return (
+    <div className="space-y-6" data-testid="productos-view">
+      <div className="flex items-center justify-between">
+        <h2 className="text-2xl font-heading font-semibold">Productos</h2>
+        {isAdmin && <button onClick={openNew} className="flex items-center gap-2 px-4 py-2 bg-[#E63946] text-white rounded-lg hover:bg-[#D90429]" data-testid="add-producto-btn"><Plus size={18} /> Nuevo Producto</button>}
+      </div>
+      <div className="relative max-w-md">
+        <MagnifyingGlass size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+        <input type="text" placeholder="Buscar por código, nombre..." value={search} onChange={(e) => setSearch(e.target.value)} className="form-input pl-10" data-testid="productos-search" />
+      </div>
+      <div className="bg-white border border-border rounded-md overflow-hidden">
+        <div className="overflow-x-auto max-h-[600px]">
+          <table className="data-table">
+            <thead className="sticky top-0 bg-white"><tr><th>Código</th><th>Nombre</th><th>Categoría</th><th className="text-right">Costo</th><th className="text-right">Precio</th><th className="text-center">Stock</th>{isAdmin && <th className="text-center">Acciones</th>}</tr></thead>
+            <tbody>
+              {loading ? <tr><td colSpan={7} className="text-center py-8">Cargando...</td></tr>
+              : productos.length === 0 ? <tr><td colSpan={7} className="text-center py-8">Sin productos</td></tr>
+              : productos.map(p => (
+                <tr key={p.id}>
+                  <td className="font-mono text-sm">{p.codigo}</td>
+                  <td className="font-medium">{p.nombre}{p.variante ? <span className="text-muted-foreground text-xs ml-1">({p.variante})</span> : ''}</td>
+                  <td><span className="badge bg-muted text-foreground">{p.categoria}</span></td>
+                  <td className="text-right text-sm">{formatGs(p.costo)}</td>
+                  <td className="text-right price-gs">{formatGs(p.precio_con_iva)}</td>
+                  <td className="text-center"><span className={p.stock <= p.stock_minimo ? 'text-red-600 font-semibold' : 'text-green-600'}>{p.stock}</span></td>
+                  {isAdmin && <td className="text-center">
+                    <div className="flex items-center justify-center gap-1">
+                      <button onClick={() => { setShowAjusteModal(p); setAjusteForm({ cantidad: 0, motivo: '' }); }} className="p-1 hover:bg-blue-50 rounded text-blue-600" title="Ajustar stock"><Package size={16} /></button>
+                      <button onClick={() => openEdit(p)} className="p-1 hover:bg-yellow-50 rounded text-yellow-600" title="Editar"><Pencil size={16} /></button>
+                      <button onClick={() => handleDelete(p.id)} className="p-1 hover:bg-red-50 rounded text-red-600" title="Eliminar"><Trash size={16} /></button>
+                    </div>
+                  </td>}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <Modal isOpen={showModal} onClose={() => setShowModal(false)} title={editItem ? 'Editar Producto' : 'Nuevo Producto'} size="lg">
+        <div className="grid grid-cols-2 gap-4">
+          <div className="form-group"><label className="form-label">Código *</label><input type="text" value={form.codigo} onChange={(e) => setForm({...form, codigo: e.target.value})} className="form-input" data-testid="producto-codigo" /></div>
+          <div className="form-group"><label className="form-label">Nombre *</label><input type="text" value={form.nombre} onChange={(e) => setForm({...form, nombre: e.target.value})} className="form-input" data-testid="producto-nombre" /></div>
+          <div className="form-group"><label className="form-label">Variante</label><input type="text" value={form.variante} onChange={(e) => setForm({...form, variante: e.target.value})} className="form-input" /></div>
+          <div className="form-group"><label className="form-label">Categoría *</label><input type="text" value={form.categoria} onChange={(e) => setForm({...form, categoria: e.target.value})} className="form-input" list="categorias-list" /><datalist id="categorias-list">{categorias.map(c => <option key={c} value={c} />)}</datalist></div>
+          <div className="form-group"><label className="form-label">Proveedor</label><input type="text" value={form.proveedor} onChange={(e) => setForm({...form, proveedor: e.target.value})} className="form-input" /></div>
+          <div className="form-group"><label className="form-label">IVA %</label><input type="number" value={form.iva_pct} onChange={(e) => setForm({...form, iva_pct: parseInt(e.target.value) || 0})} className="form-input" /></div>
+          <div className="form-group"><label className="form-label">Costo</label><input type="number" value={form.costo} onChange={(e) => setForm({...form, costo: parseFloat(e.target.value) || 0})} className="form-input" /></div>
+          <div className="form-group"><label className="form-label">Precio con IVA</label><input type="number" value={form.precio_con_iva} onChange={(e) => setForm({...form, precio_con_iva: parseFloat(e.target.value) || 0})} className="form-input" /></div>
+          <div className="form-group"><label className="form-label">Stock</label><input type="number" value={form.stock} onChange={(e) => setForm({...form, stock: parseInt(e.target.value) || 0})} className="form-input" /></div>
+          <div className="form-group"><label className="form-label">Stock Mínimo</label><input type="number" value={form.stock_minimo} onChange={(e) => setForm({...form, stock_minimo: parseInt(e.target.value) || 0})} className="form-input" /></div>
+        </div>
+        <div className="flex justify-end gap-3 mt-6">
+          <button onClick={() => setShowModal(false)} className="px-4 py-2 border border-border rounded-md hover:bg-muted">Cancelar</button>
+          <button onClick={handleSave} className="bg-[#E63946] text-white px-4 py-2 rounded-md hover:bg-[#D90429]" data-testid="save-producto-btn">{editItem ? 'Actualizar' : 'Crear'}</button>
+        </div>
+      </Modal>
+
+      <Modal isOpen={!!showAjusteModal} onClose={() => setShowAjusteModal(null)} title={`Ajustar Stock: ${showAjusteModal?.nombre || ''}`} size="sm">
+        <div className="space-y-4">
+          <p className="text-sm text-muted-foreground">Stock actual: <strong>{showAjusteModal?.stock}</strong></p>
+          <div className="form-group"><label className="form-label">Cantidad (+ entrada, - salida)</label><input type="number" value={ajusteForm.cantidad} onChange={(e) => setAjusteForm({...ajusteForm, cantidad: parseInt(e.target.value) || 0})} className="form-input" /></div>
+          <div className="form-group"><label className="form-label">Motivo *</label><input type="text" value={ajusteForm.motivo} onChange={(e) => setAjusteForm({...ajusteForm, motivo: e.target.value})} className="form-input" placeholder="Ej: Ajuste por inventario" /></div>
+          <div className="flex justify-end gap-3">
+            <button onClick={() => setShowAjusteModal(null)} className="px-4 py-2 border border-border rounded-md hover:bg-muted">Cancelar</button>
+            <button onClick={handleAjuste} disabled={!ajusteForm.motivo} className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 disabled:opacity-50">Ajustar</button>
+          </div>
+        </div>
+      </Modal>
+    </div>
+  );
+}
+
+// ==================== VENTAS VIEW ====================
+function VentasView({ user }) {
+  const [ventas, setVentas] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showModal, setShowModal] = useState(false);
+  const [clientes, setClientes] = useState([]);
+  const [productos, setProductos] = useState([]);
+  const [form, setForm] = useState({ cliente_id: '', cliente_nombre: '', items: [], observaciones: '' });
+  const [itemForm, setItemForm] = useState({ producto_id: '', cantidad: 1 });
+  const isAdmin = user?.role === 'admin';
+
+  const loadData = useCallback(() => {
+    setLoading(true);
+    api.getVentas({}).then(r => setVentas(r.data.ventas || [])).finally(() => setLoading(false));
+  }, []);
+
+  useEffect(() => { loadData(); }, [loadData]);
+
+  const openNew = async () => {
+    const [cRes, pRes] = await Promise.all([api.getClientes({}), api.getProductos({})]);
+    setClientes(cRes.data.clientes || []);
+    setProductos(pRes.data.productos || []);
+    setForm({ cliente_id: '', cliente_nombre: '', items: [], observaciones: '' });
+    setShowModal(true);
+  };
+
+  const addItem = () => {
+    const prod = productos.find(p => p.id === itemForm.producto_id);
+    if (!prod || itemForm.cantidad < 1) return;
+    if (form.items.find(i => i.producto_id === prod.id)) return alert('Producto ya agregado');
+    setForm({...form, items: [...form.items, { producto_id: prod.id, codigo: prod.codigo, nombre: prod.nombre, cantidad: itemForm.cantidad, precio_unitario: prod.precio_con_iva, costo_unitario: prod.costo, iva_pct: prod.iva_pct || 10 }]});
+    setItemForm({ producto_id: '', cantidad: 1 });
+  };
+
+  const removeItem = (idx) => setForm({...form, items: form.items.filter((_, i) => i !== idx)});
+
+  const selectCliente = (id) => {
+    const c = clientes.find(cl => cl.id === id);
+    setForm({...form, cliente_id: id, cliente_nombre: c?.nombre || ''});
+  };
+
+  const total = form.items.reduce((s, i) => s + i.precio_unitario * i.cantidad, 0);
+
+  const handleSave = async () => {
+    if (!form.cliente_id || form.items.length === 0) return alert('Seleccione cliente y agregue productos');
+    try { await api.createVenta(form); setShowModal(false); loadData(); }
+    catch (e) { alert(formatApiError(e.response?.data?.detail)); }
+  };
+
+  return (
+    <div className="space-y-6" data-testid="ventas-view">
+      <div className="flex items-center justify-between">
+        <h2 className="text-2xl font-heading font-semibold">Ventas</h2>
+        <button onClick={openNew} className="flex items-center gap-2 px-4 py-2 bg-[#E63946] text-white rounded-lg hover:bg-[#D90429]" data-testid="add-venta-btn"><Plus size={18} /> Nueva Venta</button>
+      </div>
+      <div className="bg-white border border-border rounded-md">
+        <div className="overflow-x-auto max-h-[600px]">
+          <table className="data-table">
+            <thead className="sticky top-0 bg-white"><tr><th>Fecha</th><th>Cliente</th><th className="text-center">Items</th><th className="text-right">Total</th><th className="text-right">Utilidad</th></tr></thead>
+            <tbody>
+              {loading ? <tr><td colSpan={5} className="text-center py-8">Cargando...</td></tr>
+              : ventas.length === 0 ? <tr><td colSpan={5} className="text-center py-8">Sin ventas registradas</td></tr>
+              : ventas.map(v => (
+                <tr key={v.id}><td>{new Date(v.fecha).toLocaleDateString('es-PY')}</td><td className="font-medium">{v.cliente_nombre}</td><td className="text-center">{v.items?.length || 0}</td><td className="text-right price-gs">{formatGs(v.total)}</td><td className="text-right price-gs text-green-600">{formatGs(v.utilidad)}</td></tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <Modal isOpen={showModal} onClose={() => setShowModal(false)} title="Nueva Venta" size="xl">
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div className="form-group">
+              <label className="form-label">Cliente *</label>
+              <select value={form.cliente_id} onChange={(e) => selectCliente(e.target.value)} className="form-input" data-testid="venta-cliente">
+                <option value="">Seleccionar cliente...</option>
+                {clientes.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+              </select>
+            </div>
+            <div className="form-group"><label className="form-label">Observaciones</label><input type="text" value={form.observaciones} onChange={(e) => setForm({...form, observaciones: e.target.value})} className="form-input" /></div>
+          </div>
+          <div className="border border-border rounded-lg p-4">
+            <h4 className="font-semibold text-sm mb-3">Agregar Productos</h4>
+            <div className="flex gap-2 items-end">
+              <div className="flex-1 form-group mb-0">
+                <select value={itemForm.producto_id} onChange={(e) => setItemForm({...itemForm, producto_id: e.target.value})} className="form-input" data-testid="venta-producto-select">
+                  <option value="">Seleccionar producto...</option>
+                  {productos.filter(p => p.stock > 0).map(p => <option key={p.id} value={p.id}>{p.codigo} - {p.nombre} (Stock: {p.stock}) - {formatGs(p.precio_con_iva)}</option>)}
+                </select>
+              </div>
+              <div className="w-24 form-group mb-0"><input type="number" value={itemForm.cantidad} onChange={(e) => setItemForm({...itemForm, cantidad: parseInt(e.target.value) || 1})} className="form-input" min="1" placeholder="Cant." /></div>
+              <button onClick={addItem} className="px-3 py-2 bg-green-600 text-white rounded-md hover:bg-green-700" data-testid="add-item-btn"><Plus size={18} /></button>
+            </div>
+            {form.items.length > 0 && (
+              <table className="data-table mt-3">
+                <thead><tr><th>Producto</th><th className="text-center">Cant.</th><th className="text-right">Precio</th><th className="text-right">Subtotal</th><th></th></tr></thead>
+                <tbody>
+                  {form.items.map((item, i) => (
+                    <tr key={i}><td>{item.nombre}</td><td className="text-center">{item.cantidad}</td><td className="text-right">{formatGs(item.precio_unitario)}</td><td className="text-right font-medium">{formatGs(item.precio_unitario * item.cantidad)}</td>
+                    <td className="text-center"><button onClick={() => removeItem(i)} className="text-red-500 hover:text-red-700"><X size={16} /></button></td></tr>
+                  ))}
+                  <tr className="font-semibold bg-muted"><td colSpan={3} className="text-right">TOTAL:</td><td className="text-right text-lg">{formatGs(total)}</td><td></td></tr>
+                </tbody>
+              </table>
+            )}
+          </div>
+          <div className="flex justify-end gap-3">
+            <button onClick={() => setShowModal(false)} className="px-4 py-2 border border-border rounded-md hover:bg-muted">Cancelar</button>
+            <button onClick={handleSave} disabled={!form.cliente_id || form.items.length === 0} className="bg-[#E63946] text-white px-4 py-2 rounded-md hover:bg-[#D90429] disabled:opacity-50" data-testid="save-venta-btn">Registrar Venta</button>
+          </div>
+        </div>
+      </Modal>
+    </div>
+  );
+}
+
+// ==================== COMPRAS VIEW ====================
+function ComprasView({ user }) {
+  const [compras, setCompras] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showModal, setShowModal] = useState(false);
+  const [proveedores, setProveedores] = useState([]);
+  const [productos, setProductos] = useState([]);
+  const [form, setForm] = useState({ proveedor_id: '', proveedor_nombre: '', factura: '', items: [], observaciones: '' });
+  const [itemForm, setItemForm] = useState({ producto_id: '', cantidad: 1, precio_unitario: 0 });
+
+  const loadData = useCallback(() => {
+    setLoading(true);
+    api.getCompras({}).then(r => setCompras(r.data.compras || [])).finally(() => setLoading(false));
+  }, []);
+
+  useEffect(() => { loadData(); }, [loadData]);
+
+  const openNew = async () => {
+    const [provRes, prodRes] = await Promise.all([api.getProveedores({}), api.getProductos({})]);
+    setProveedores(provRes.data.proveedores || []);
+    setProductos(prodRes.data.productos || []);
+    setForm({ proveedor_id: '', proveedor_nombre: '', factura: '', items: [], observaciones: '' });
+    setShowModal(true);
+  };
+
+  const selectProveedor = (id) => {
+    const p = proveedores.find(pr => pr.id === id);
+    setForm({...form, proveedor_id: id, proveedor_nombre: p?.nombre || ''});
+  };
+
+  const addItem = () => {
+    const prod = productos.find(p => p.id === itemForm.producto_id);
+    if (!prod || itemForm.cantidad < 1) return;
+    setForm({...form, items: [...form.items, { producto_id: prod.id, codigo: prod.codigo, nombre: prod.nombre, cantidad: itemForm.cantidad, precio_unitario: itemForm.precio_unitario || prod.costo, iva_pct: prod.iva_pct || 10 }]});
+    setItemForm({ producto_id: '', cantidad: 1, precio_unitario: 0 });
+  };
+
+  const removeItem = (idx) => setForm({...form, items: form.items.filter((_, i) => i !== idx)});
+  const total = form.items.reduce((s, i) => s + i.precio_unitario * i.cantidad, 0);
+
+  const handleSave = async () => {
+    if (!form.proveedor_id || form.items.length === 0) return alert('Seleccione proveedor y agregue productos');
+    try { await api.createCompra(form); setShowModal(false); loadData(); }
+    catch (e) { alert(formatApiError(e.response?.data?.detail)); }
+  };
+
+  return (
+    <div className="space-y-6" data-testid="compras-view">
+      <div className="flex items-center justify-between">
+        <h2 className="text-2xl font-heading font-semibold">Compras</h2>
+        <button onClick={openNew} className="flex items-center gap-2 px-4 py-2 bg-[#E63946] text-white rounded-lg hover:bg-[#D90429]" data-testid="add-compra-btn"><Plus size={18} /> Nueva Compra</button>
+      </div>
+      <div className="bg-white border border-border rounded-md">
+        <div className="overflow-x-auto max-h-[600px]">
+          <table className="data-table">
+            <thead className="sticky top-0 bg-white"><tr><th>Fecha</th><th>Proveedor</th><th>Factura</th><th className="text-center">Items</th><th className="text-right">Total</th></tr></thead>
+            <tbody>
+              {loading ? <tr><td colSpan={5} className="text-center py-8">Cargando...</td></tr>
+              : compras.length === 0 ? <tr><td colSpan={5} className="text-center py-8">Sin compras registradas</td></tr>
+              : compras.map(c => (
+                <tr key={c.id}><td>{new Date(c.fecha).toLocaleDateString('es-PY')}</td><td className="font-medium">{c.proveedor_nombre}</td><td>{c.factura || '-'}</td><td className="text-center">{c.items?.length || 0}</td><td className="text-right price-gs">{formatGs(c.total)}</td></tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <Modal isOpen={showModal} onClose={() => setShowModal(false)} title="Nueva Compra" size="xl">
+        <div className="space-y-4">
+          <div className="grid grid-cols-3 gap-4">
+            <div className="form-group">
+              <label className="form-label">Proveedor *</label>
+              <select value={form.proveedor_id} onChange={(e) => selectProveedor(e.target.value)} className="form-input" data-testid="compra-proveedor">
+                <option value="">Seleccionar...</option>
+                {proveedores.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
+              </select>
+            </div>
+            <div className="form-group"><label className="form-label">Nro. Factura</label><input type="text" value={form.factura} onChange={(e) => setForm({...form, factura: e.target.value})} className="form-input" /></div>
+            <div className="form-group"><label className="form-label">Observaciones</label><input type="text" value={form.observaciones} onChange={(e) => setForm({...form, observaciones: e.target.value})} className="form-input" /></div>
+          </div>
+          <div className="border border-border rounded-lg p-4">
+            <h4 className="font-semibold text-sm mb-3">Agregar Productos</h4>
+            <div className="flex gap-2 items-end">
+              <div className="flex-1 form-group mb-0">
+                <select value={itemForm.producto_id} onChange={(e) => { const p = productos.find(pr => pr.id === e.target.value); setItemForm({...itemForm, producto_id: e.target.value, precio_unitario: p?.costo || 0}); }} className="form-input">
+                  <option value="">Seleccionar producto...</option>
+                  {productos.map(p => <option key={p.id} value={p.id}>{p.codigo} - {p.nombre}</option>)}
+                </select>
+              </div>
+              <div className="w-24 form-group mb-0"><input type="number" value={itemForm.cantidad} onChange={(e) => setItemForm({...itemForm, cantidad: parseInt(e.target.value) || 1})} className="form-input" min="1" placeholder="Cant." /></div>
+              <div className="w-32 form-group mb-0"><input type="number" value={itemForm.precio_unitario} onChange={(e) => setItemForm({...itemForm, precio_unitario: parseFloat(e.target.value) || 0})} className="form-input" placeholder="Precio" /></div>
+              <button onClick={addItem} className="px-3 py-2 bg-green-600 text-white rounded-md hover:bg-green-700"><Plus size={18} /></button>
+            </div>
+            {form.items.length > 0 && (
+              <table className="data-table mt-3">
+                <thead><tr><th>Producto</th><th className="text-center">Cant.</th><th className="text-right">Precio</th><th className="text-right">Subtotal</th><th></th></tr></thead>
+                <tbody>
+                  {form.items.map((item, i) => (
+                    <tr key={i}><td>{item.nombre}</td><td className="text-center">{item.cantidad}</td><td className="text-right">{formatGs(item.precio_unitario)}</td><td className="text-right font-medium">{formatGs(item.precio_unitario * item.cantidad)}</td>
+                    <td className="text-center"><button onClick={() => removeItem(i)} className="text-red-500"><X size={16} /></button></td></tr>
+                  ))}
+                  <tr className="font-semibold bg-muted"><td colSpan={3} className="text-right">TOTAL:</td><td className="text-right text-lg">{formatGs(total)}</td><td></td></tr>
+                </tbody>
+              </table>
+            )}
+          </div>
+          <div className="flex justify-end gap-3">
+            <button onClick={() => setShowModal(false)} className="px-4 py-2 border border-border rounded-md hover:bg-muted">Cancelar</button>
+            <button onClick={handleSave} disabled={!form.proveedor_id || form.items.length === 0} className="bg-[#E63946] text-white px-4 py-2 rounded-md hover:bg-[#D90429] disabled:opacity-50" data-testid="save-compra-btn">Registrar Compra</button>
+          </div>
+        </div>
+      </Modal>
+    </div>
+  );
+}
+
+// ==================== CLIENTES VIEW ====================
+function ClientesView({ user }) {
+  const [clientes, setClientes] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showModal, setShowModal] = useState(false);
+  const [editItem, setEditItem] = useState(null);
+  const [form, setForm] = useState({ nombre: '', ruc: '', telefono: '', direccion: '', ciudad: '', tipo: 'Odontólogo' });
+  const isAdmin = user?.role === 'admin';
+
+  const loadData = useCallback(() => { setLoading(true); api.getClientes({}).then(r => setClientes(r.data.clientes || [])).finally(() => setLoading(false)); }, []);
+  useEffect(() => { loadData(); }, [loadData]);
+
+  const openNew = () => { setEditItem(null); setForm({ nombre: '', ruc: '', telefono: '', direccion: '', ciudad: '', tipo: 'Odontólogo' }); setShowModal(true); };
+  const openEdit = (c) => { setEditItem(c); setForm({ nombre: c.nombre, ruc: c.ruc || '', telefono: c.telefono || '', direccion: c.direccion || '', ciudad: c.ciudad || '', tipo: c.tipo || 'Odontólogo' }); setShowModal(true); };
+
+  const handleSave = async () => {
+    try {
+      if (editItem) { await api.updateCliente(editItem.id, form); }
+      else { await api.createCliente(form); }
+      setShowModal(false); loadData();
+    } catch (e) { alert(formatApiError(e.response?.data?.detail)); }
+  };
+
+  const handleDelete = async (id) => {
+    if (!window.confirm('¿Eliminar este cliente?')) return;
+    try { await api.deleteCliente(id); loadData(); } catch (e) { alert(formatApiError(e.response?.data?.detail)); }
+  };
+
+  return (
+    <div className="space-y-6" data-testid="clientes-view">
+      <div className="flex items-center justify-between">
+        <h2 className="text-2xl font-heading font-semibold">Clientes</h2>
+        <button onClick={openNew} className="flex items-center gap-2 px-4 py-2 bg-[#E63946] text-white rounded-lg hover:bg-[#D90429]" data-testid="add-cliente-btn"><Plus size={18} /> Nuevo Cliente</button>
+      </div>
+      <div className="bg-white border border-border rounded-md">
+        <table className="data-table">
+          <thead><tr><th>Nombre</th><th>RUC</th><th>Teléfono</th><th>Ciudad</th><th>Tipo</th>{isAdmin && <th className="text-center">Acciones</th>}</tr></thead>
+          <tbody>
+            {loading ? <tr><td colSpan={6} className="text-center py-8">Cargando...</td></tr>
+            : clientes.length === 0 ? <tr><td colSpan={6} className="text-center py-8">Sin clientes</td></tr>
+            : clientes.map(c => (
+              <tr key={c.id}><td className="font-medium">{c.nombre}</td><td>{c.ruc || '-'}</td><td>{c.telefono || '-'}</td><td>{c.ciudad || '-'}</td><td><span className="badge bg-blue-100 text-blue-800">{c.tipo}</span></td>
+              {isAdmin && <td className="text-center"><div className="flex items-center justify-center gap-1"><button onClick={() => openEdit(c)} className="p-1 hover:bg-yellow-50 rounded text-yellow-600"><Pencil size={16} /></button><button onClick={() => handleDelete(c.id)} className="p-1 hover:bg-red-50 rounded text-red-600"><Trash size={16} /></button></div></td>}</tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <Modal isOpen={showModal} onClose={() => setShowModal(false)} title={editItem ? 'Editar Cliente' : 'Nuevo Cliente'} size="md">
+        <div className="space-y-4">
+          <div className="form-group"><label className="form-label">Nombre *</label><input type="text" value={form.nombre} onChange={(e) => setForm({...form, nombre: e.target.value})} className="form-input" data-testid="cliente-nombre" /></div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="form-group"><label className="form-label">RUC</label><input type="text" value={form.ruc} onChange={(e) => setForm({...form, ruc: e.target.value})} className="form-input" /></div>
+            <div className="form-group"><label className="form-label">Teléfono</label><input type="text" value={form.telefono} onChange={(e) => setForm({...form, telefono: e.target.value})} className="form-input" /></div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="form-group"><label className="form-label">Ciudad</label><input type="text" value={form.ciudad} onChange={(e) => setForm({...form, ciudad: e.target.value})} className="form-input" /></div>
+            <div className="form-group"><label className="form-label">Tipo</label><select value={form.tipo} onChange={(e) => setForm({...form, tipo: e.target.value})} className="form-input"><option>Odontólogo</option><option>Clínica</option><option>Laboratorio</option><option>Otro</option></select></div>
+          </div>
+          <div className="form-group"><label className="form-label">Dirección</label><input type="text" value={form.direccion} onChange={(e) => setForm({...form, direccion: e.target.value})} className="form-input" /></div>
+          <div className="flex justify-end gap-3">
+            <button onClick={() => setShowModal(false)} className="px-4 py-2 border border-border rounded-md hover:bg-muted">Cancelar</button>
+            <button onClick={handleSave} className="bg-[#E63946] text-white px-4 py-2 rounded-md hover:bg-[#D90429]" data-testid="save-cliente-btn">{editItem ? 'Actualizar' : 'Crear'}</button>
+          </div>
+        </div>
+      </Modal>
+    </div>
+  );
+}
+
+// ==================== PROVEEDORES VIEW ====================
+function ProveedoresView({ user }) {
+  const [proveedores, setProveedores] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showModal, setShowModal] = useState(false);
+  const [editItem, setEditItem] = useState(null);
+  const [form, setForm] = useState({ nombre: '', ruc: '', direccion: '', contacto: '', telefono: '' });
+  const isAdmin = user?.role === 'admin';
+
+  const loadData = useCallback(() => { setLoading(true); api.getProveedores({}).then(r => setProveedores(r.data.proveedores || [])).finally(() => setLoading(false)); }, []);
+  useEffect(() => { loadData(); }, [loadData]);
+
+  const openNew = () => { setEditItem(null); setForm({ nombre: '', ruc: '', direccion: '', contacto: '', telefono: '' }); setShowModal(true); };
+  const openEdit = (p) => { setEditItem(p); setForm({ nombre: p.nombre, ruc: p.ruc || '', direccion: p.direccion || '', contacto: p.contacto || '', telefono: p.telefono || '' }); setShowModal(true); };
+
+  const handleSave = async () => {
+    try {
+      if (editItem) { await api.updateProveedor(editItem.id, form); }
+      else { await api.createProveedor(form); }
+      setShowModal(false); loadData();
+    } catch (e) { alert(formatApiError(e.response?.data?.detail)); }
+  };
+
+  const handleDelete = async (id) => {
+    if (!window.confirm('¿Eliminar este proveedor?')) return;
+    try { await api.deleteProveedor(id); loadData(); } catch (e) { alert(formatApiError(e.response?.data?.detail)); }
+  };
+
+  return (
+    <div className="space-y-6" data-testid="proveedores-view">
+      <div className="flex items-center justify-between">
+        <h2 className="text-2xl font-heading font-semibold">Proveedores</h2>
+        <button onClick={openNew} className="flex items-center gap-2 px-4 py-2 bg-[#E63946] text-white rounded-lg hover:bg-[#D90429]" data-testid="add-proveedor-btn"><Plus size={18} /> Nuevo Proveedor</button>
+      </div>
+      <div className="bg-white border border-border rounded-md">
+        <table className="data-table">
+          <thead><tr><th>Nombre</th><th>RUC</th><th>Contacto</th><th>Teléfono</th><th>Dirección</th>{isAdmin && <th className="text-center">Acciones</th>}</tr></thead>
+          <tbody>
+            {loading ? <tr><td colSpan={6} className="text-center py-8">Cargando...</td></tr>
+            : proveedores.length === 0 ? <tr><td colSpan={6} className="text-center py-8">Sin proveedores</td></tr>
+            : proveedores.map(p => (
+              <tr key={p.id}><td className="font-medium">{p.nombre}</td><td>{p.ruc || '-'}</td><td>{p.contacto || '-'}</td><td>{p.telefono || '-'}</td><td className="text-sm">{p.direccion || '-'}</td>
+              {isAdmin && <td className="text-center"><div className="flex items-center justify-center gap-1"><button onClick={() => openEdit(p)} className="p-1 hover:bg-yellow-50 rounded text-yellow-600"><Pencil size={16} /></button><button onClick={() => handleDelete(p.id)} className="p-1 hover:bg-red-50 rounded text-red-600"><Trash size={16} /></button></div></td>}</tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <Modal isOpen={showModal} onClose={() => setShowModal(false)} title={editItem ? 'Editar Proveedor' : 'Nuevo Proveedor'} size="md">
+        <div className="space-y-4">
+          <div className="form-group"><label className="form-label">Nombre *</label><input type="text" value={form.nombre} onChange={(e) => setForm({...form, nombre: e.target.value})} className="form-input" data-testid="proveedor-nombre" /></div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="form-group"><label className="form-label">RUC</label><input type="text" value={form.ruc} onChange={(e) => setForm({...form, ruc: e.target.value})} className="form-input" /></div>
+            <div className="form-group"><label className="form-label">Teléfono</label><input type="text" value={form.telefono} onChange={(e) => setForm({...form, telefono: e.target.value})} className="form-input" /></div>
+          </div>
+          <div className="form-group"><label className="form-label">Contacto</label><input type="text" value={form.contacto} onChange={(e) => setForm({...form, contacto: e.target.value})} className="form-input" /></div>
+          <div className="form-group"><label className="form-label">Dirección</label><input type="text" value={form.direccion} onChange={(e) => setForm({...form, direccion: e.target.value})} className="form-input" /></div>
+          <div className="flex justify-end gap-3">
+            <button onClick={() => setShowModal(false)} className="px-4 py-2 border border-border rounded-md hover:bg-muted">Cancelar</button>
+            <button onClick={handleSave} className="bg-[#E63946] text-white px-4 py-2 rounded-md hover:bg-[#D90429]" data-testid="save-proveedor-btn">{editItem ? 'Actualizar' : 'Crear'}</button>
+          </div>
+        </div>
+      </Modal>
+    </div>
+  );
+}
+
+// ==================== GASTOS VIEW ====================
+function GastosView({ user }) {
+  const [gastos, setGastos] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showModal, setShowModal] = useState(false);
+  const [form, setForm] = useState({ fecha: new Date().toISOString().split('T')[0], categoria: '', descripcion: '', monto: 0, iva_pct: 10, proveedor: '' });
+
+  const loadData = useCallback(() => { setLoading(true); api.getGastos({}).then(r => setGastos(r.data.gastos || [])).finally(() => setLoading(false)); }, []);
+  useEffect(() => { loadData(); }, [loadData]);
+
+  const total = gastos.reduce((s, g) => s + (g.monto || 0), 0);
+
+  const handleSave = async () => {
+    if (!form.categoria || !form.descripcion || !form.monto) return alert('Complete los campos obligatorios');
+    try { await api.createGasto(form); setShowModal(false); loadData(); }
+    catch (e) { alert(formatApiError(e.response?.data?.detail)); }
+  };
+
+  return (
+    <div className="space-y-6" data-testid="gastos-view">
+      <div className="flex items-center justify-between">
+        <div><h2 className="text-2xl font-heading font-semibold">Gastos</h2><p className="text-muted-foreground">Total: {formatGs(total)}</p></div>
+        <button onClick={() => { setForm({ fecha: new Date().toISOString().split('T')[0], categoria: '', descripcion: '', monto: 0, iva_pct: 10, proveedor: '' }); setShowModal(true); }} className="flex items-center gap-2 px-4 py-2 bg-[#E63946] text-white rounded-lg hover:bg-[#D90429]" data-testid="add-gasto-btn"><Plus size={18} /> Nuevo Gasto</button>
+      </div>
+      <div className="bg-white border border-border rounded-md">
+        <table className="data-table">
+          <thead><tr><th>Fecha</th><th>Categoría</th><th>Descripción</th><th>Proveedor</th><th className="text-right">Monto</th></tr></thead>
+          <tbody>
+            {loading ? <tr><td colSpan={5} className="text-center py-8">Cargando...</td></tr>
+            : gastos.length === 0 ? <tr><td colSpan={5} className="text-center py-8">Sin gastos registrados</td></tr>
+            : gastos.map(g => (
+              <tr key={g.id}><td>{new Date(g.fecha).toLocaleDateString('es-PY')}</td><td><span className="badge bg-orange-100 text-orange-800">{g.categoria}</span></td><td>{g.descripcion}</td><td>{g.proveedor || '-'}</td><td className="text-right price-gs">{formatGs(g.monto)}</td></tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <Modal isOpen={showModal} onClose={() => setShowModal(false)} title="Nuevo Gasto" size="md">
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div className="form-group"><label className="form-label">Fecha *</label><input type="date" value={form.fecha} onChange={(e) => setForm({...form, fecha: e.target.value})} className="form-input" /></div>
+            <div className="form-group"><label className="form-label">Categoría *</label><input type="text" value={form.categoria} onChange={(e) => setForm({...form, categoria: e.target.value})} className="form-input" list="gastos-cat" /><datalist id="gastos-cat"><option value="Alquiler" /><option value="Servicios" /><option value="Transporte" /><option value="Sueldos" /><option value="Impuestos" /><option value="Varios" /></datalist></div>
+          </div>
+          <div className="form-group"><label className="form-label">Descripción *</label><input type="text" value={form.descripcion} onChange={(e) => setForm({...form, descripcion: e.target.value})} className="form-input" data-testid="gasto-descripcion" /></div>
+          <div className="grid grid-cols-3 gap-4">
+            <div className="form-group"><label className="form-label">Monto *</label><input type="number" value={form.monto} onChange={(e) => setForm({...form, monto: parseFloat(e.target.value) || 0})} className="form-input" /></div>
+            <div className="form-group"><label className="form-label">IVA %</label><input type="number" value={form.iva_pct} onChange={(e) => setForm({...form, iva_pct: parseInt(e.target.value) || 0})} className="form-input" /></div>
+            <div className="form-group"><label className="form-label">Proveedor</label><input type="text" value={form.proveedor} onChange={(e) => setForm({...form, proveedor: e.target.value})} className="form-input" /></div>
+          </div>
+          <div className="flex justify-end gap-3">
+            <button onClick={() => setShowModal(false)} className="px-4 py-2 border border-border rounded-md hover:bg-muted">Cancelar</button>
+            <button onClick={handleSave} className="bg-[#E63946] text-white px-4 py-2 rounded-md hover:bg-[#D90429]" data-testid="save-gasto-btn">Registrar Gasto</button>
+          </div>
+        </div>
+      </Modal>
+    </div>
+  );
+}
+
+// ==================== USUARIOS VIEW ====================
+function UsuariosView() {
+  const [usuarios, setUsuarios] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showModal, setShowModal] = useState(false);
+  const [form, setForm] = useState({ email: '', password: '', nombre: '', role: 'usuario' });
+
+  const loadData = useCallback(() => { setLoading(true); api.getUsuarios().then(r => setUsuarios(r.data.usuarios || [])).finally(() => setLoading(false)); }, []);
+  useEffect(() => { loadData(); }, [loadData]);
+
+  const handleSave = async () => {
+    if (!form.email || !form.password || !form.nombre) return alert('Complete todos los campos');
+    try { await api.createUsuario(form); setShowModal(false); loadData(); }
+    catch (e) { alert(formatApiError(e.response?.data?.detail)); }
+  };
+
+  const handleDelete = async (id) => {
+    if (!window.confirm('¿Eliminar este usuario?')) return;
+    try { await api.deleteUsuario(id); loadData(); } catch (e) { alert(formatApiError(e.response?.data?.detail)); }
+  };
+
+  const toggleActive = async (u) => {
+    try { await api.updateUsuario(u.id, { activo: u.activo === false ? true : false }); loadData(); }
+    catch (e) { alert(formatApiError(e.response?.data?.detail)); }
+  };
+
+  return (
+    <div className="space-y-6" data-testid="usuarios-view">
+      <div className="flex items-center justify-between">
+        <h2 className="text-2xl font-heading font-semibold">Usuarios</h2>
+        <button onClick={() => { setForm({ email: '', password: '', nombre: '', role: 'usuario' }); setShowModal(true); }} className="flex items-center gap-2 px-4 py-2 bg-[#E63946] text-white rounded-lg hover:bg-[#D90429]" data-testid="add-usuario-btn"><Plus size={18} /> Nuevo Usuario</button>
+      </div>
+      <div className="bg-white border border-border rounded-md">
+        <table className="data-table">
+          <thead><tr><th>Usuario</th><th>Nombre</th><th>Rol</th><th>Estado</th><th className="text-center">Acciones</th></tr></thead>
+          <tbody>
+            {loading ? <tr><td colSpan={5} className="text-center py-8">Cargando...</td></tr>
+            : usuarios.map(u => (
+              <tr key={u.id}>
+                <td className="font-medium">{u.email}</td><td>{u.nombre || '-'}</td>
+                <td><span className={`badge ${u.role === 'admin' ? 'bg-purple-100 text-purple-800' : 'bg-blue-100 text-blue-800'}`}>{u.role}</span></td>
+                <td><span className={`badge ${u.activo !== false ? 'badge-success' : 'badge-danger'}`}>{u.activo !== false ? 'Activo' : 'Inactivo'}</span></td>
+                <td className="text-center">
+                  <div className="flex items-center justify-center gap-1">
+                    <button onClick={() => toggleActive(u)} className={`p-1 rounded ${u.activo !== false ? 'hover:bg-yellow-50 text-yellow-600' : 'hover:bg-green-50 text-green-600'}`} title={u.activo !== false ? 'Desactivar' : 'Activar'}>{u.activo !== false ? <Lock size={16} /> : <Check size={16} />}</button>
+                    <button onClick={() => handleDelete(u.id)} className="p-1 hover:bg-red-50 rounded text-red-600" title="Eliminar"><Trash size={16} /></button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <Modal isOpen={showModal} onClose={() => setShowModal(false)} title="Nuevo Usuario" size="md">
+        <div className="space-y-4">
+          <div className="form-group"><label className="form-label">Email/Usuario *</label><input type="text" value={form.email} onChange={(e) => setForm({...form, email: e.target.value})} className="form-input" data-testid="usuario-email" /></div>
+          <div className="form-group"><label className="form-label">Nombre *</label><input type="text" value={form.nombre} onChange={(e) => setForm({...form, nombre: e.target.value})} className="form-input" data-testid="usuario-nombre" /></div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="form-group"><label className="form-label">Contraseña *</label><input type="password" value={form.password} onChange={(e) => setForm({...form, password: e.target.value})} className="form-input" data-testid="usuario-password" /></div>
+            <div className="form-group"><label className="form-label">Rol</label><select value={form.role} onChange={(e) => setForm({...form, role: e.target.value})} className="form-input"><option value="usuario">Usuario</option><option value="admin">Administrador</option></select></div>
+          </div>
+          <div className="flex justify-end gap-3">
+            <button onClick={() => setShowModal(false)} className="px-4 py-2 border border-border rounded-md hover:bg-muted">Cancelar</button>
+            <button onClick={handleSave} className="bg-[#E63946] text-white px-4 py-2 rounded-md hover:bg-[#D90429]" data-testid="save-usuario-btn">Crear Usuario</button>
+          </div>
+        </div>
+      </Modal>
+    </div>
+  );
+}
+
 function ReportesView() { const exportCSV = (t) => window.open(`${API_URL}/api/reportes/${t}?formato=csv`, '_blank'); return (<div className="space-y-6" data-testid="reportes-view"><h2 className="text-2xl font-heading font-semibold">Reportes</h2><div className="bg-white border border-border rounded-md p-6"><h3 className="font-semibold mb-4">Exportar Reportes</h3><div className="grid grid-cols-1 md:grid-cols-3 gap-4"><button onClick={() => exportCSV('ventas')} className="flex items-center gap-3 p-4 border rounded-lg hover:bg-muted"><FileText size={24} className="text-green-600" /><div className="text-left"><p className="font-medium">Ventas CSV</p></div></button><button onClick={() => exportCSV('productos')} className="flex items-center gap-3 p-4 border rounded-lg hover:bg-muted"><Package size={24} className="text-blue-600" /><div className="text-left"><p className="font-medium">Inventario CSV</p></div></button><button onClick={() => exportCSV('stock-movimientos')} className="flex items-center gap-3 p-4 border rounded-lg hover:bg-muted"><ClockCounterClockwise size={24} className="text-orange-600" /><div className="text-left"><p className="font-medium">Mov. Stock CSV</p></div></button></div></div></div>); }
 function StockHistorialView() { const [movimientos, setMovimientos] = useState([]); const [loading, setLoading] = useState(true); useEffect(() => { api.getStockMovimientos({}).then(r => setMovimientos(r.data.movimientos || [])).finally(() => setLoading(false)); }, []); return (<div className="space-y-6" data-testid="stock-historial-view"><h2 className="text-2xl font-heading font-semibold">Historial Stock</h2><div className="bg-white border border-border rounded-md"><div className="overflow-x-auto max-h-[600px]"><table className="data-table"><thead className="sticky top-0 bg-white"><tr><th>Fecha</th><th>Producto</th><th>Tipo</th><th className="text-right">Cant.</th><th className="text-right">Anterior</th><th className="text-right">Nuevo</th><th>Usuario</th></tr></thead><tbody>{loading ? <tr><td colSpan={7} className="text-center py-8">Cargando...</td></tr> : movimientos.map(m => (<tr key={m.id}><td className="text-sm">{new Date(m.fecha).toLocaleString('es-PY')}</td><td className="font-medium">{m.producto_nombre}</td><td><span className={`badge ${m.tipo === 'entrada' ? 'badge-success' : 'badge-warning'}`}>{m.tipo}</span></td><td className="text-right font-mono">{m.cantidad}</td><td className="text-right text-muted-foreground">{m.stock_anterior}</td><td className="text-right font-medium">{m.stock_nuevo}</td><td className="text-sm">{m.usuario_email || '-'}</td></tr>))}</tbody></table></div></div></div>); }
-function UsuariosView() { const [usuarios, setUsuarios] = useState([]); const [loading, setLoading] = useState(true); useEffect(() => { api.getUsuarios().then(r => setUsuarios(r.data.usuarios || [])).finally(() => setLoading(false)); }, []); return (<div className="space-y-6" data-testid="usuarios-view"><h2 className="text-2xl font-heading font-semibold">Usuarios</h2><div className="bg-white border border-border rounded-md"><table className="data-table"><thead><tr><th>Usuario</th><th>Nombre</th><th>Rol</th><th>Estado</th></tr></thead><tbody>{loading ? <tr><td colSpan={4} className="text-center py-8">Cargando...</td></tr> : usuarios.map(u => (<tr key={u.id}><td className="font-medium">{u.email}</td><td>{u.nombre || '-'}</td><td><span className={`badge ${u.role === 'admin' ? 'bg-purple-100 text-purple-800' : 'bg-blue-100 text-blue-800'}`}>{u.role}</span></td><td><span className={`badge ${u.activo !== false ? 'badge-success' : 'badge-danger'}`}>{u.activo !== false ? 'Activo' : 'Inactivo'}</span></td></tr>))}</tbody></table></div></div>); }
 function AuditoriaView() { const [registros, setRegistros] = useState([]); const [loading, setLoading] = useState(true); useEffect(() => { api.getAuditoria({}).then(r => setRegistros(r.data.registros || [])).finally(() => setLoading(false)); }, []); return (<div className="space-y-6" data-testid="auditoria-view"><h2 className="text-2xl font-heading font-semibold">Auditoría</h2><div className="bg-white border border-border rounded-md"><div className="overflow-x-auto max-h-[600px]"><table className="data-table"><thead className="sticky top-0 bg-white"><tr><th>Fecha</th><th>Usuario</th><th>Acción</th><th>Módulo</th><th>Detalle</th></tr></thead><tbody>{loading ? <tr><td colSpan={5} className="text-center py-8">Cargando...</td></tr> : registros.map(r => (<tr key={r.id}><td className="text-sm">{new Date(r.fecha).toLocaleString('es-PY')}</td><td className="font-medium">{r.usuario_email}</td><td><span className="badge bg-muted">{r.accion}</span></td><td className="capitalize">{r.modulo}</td><td className="text-sm text-muted-foreground max-w-xs truncate">{JSON.stringify(r.detalle)}</td></tr>))}</tbody></table></div></div></div>); }
 
 // Main App
@@ -1101,11 +1710,11 @@ function App() {
       case 'dashboard': return <DashboardView user={user} />;
       case 'estadisticas': return <EstadisticasView />;
       case 'productos': return <ProductosView user={user} />;
-      case 'ventas': return <VentasView />;
-      case 'compras': return <ComprasView />;
-      case 'clientes': return <ClientesView />;
-      case 'proveedores': return <ProveedoresView />;
-      case 'gastos': return <GastosView />;
+      case 'ventas': return <VentasView user={user} />;
+      case 'compras': return <ComprasView user={user} />;
+      case 'clientes': return <ClientesView user={user} />;
+      case 'proveedores': return <ProveedoresView user={user} />;
+      case 'gastos': return <GastosView user={user} />;
       case 'reportes': return <ReportesView />;
       case 'stock-historial': return <StockHistorialView />;
       case 'usuarios': return <UsuariosView />;
