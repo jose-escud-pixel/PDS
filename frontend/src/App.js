@@ -8,7 +8,8 @@ import {
   Download, Lock, Eye, EyeSlash, UserGear, Gear, ChartLine, ChartBar,
   ChartPie, FilePdf, TrendUp, TrendDown, Target, Sliders, FloppyDisk,
   ArrowsOutCardinal, Layout, Rows, SquaresFour,
-  ShareNetwork, Globe, LockSimple, UsersThree, Copy, BookmarkSimple
+  ShareNetwork, Globe, LockSimple, UsersThree, Copy, BookmarkSimple,
+  Camera, CalendarBlank, Funnel
 } from '@phosphor-icons/react';
 import {
   AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell, LineChart, Line,
@@ -62,6 +63,12 @@ const api = {
   deletePlantilla: (id) => axios.delete(`${API_URL}/api/plantillas/${id}`),
   aplicarPlantilla: (id) => axios.post(`${API_URL}/api/plantillas/${id}/aplicar`),
   getUsuariosLista: () => axios.get(`${API_URL}/api/usuarios/lista`),
+  getPerfil: () => axios.get(`${API_URL}/api/perfil`),
+  updatePerfil: (d) => axios.put(`${API_URL}/api/perfil`, d),
+  changePassword: (d) => axios.put(`${API_URL}/api/perfil/password`, d),
+  uploadFoto: (f) => { const fd = new FormData(); fd.append('foto', f); return axios.post(`${API_URL}/api/perfil/foto`, fd, { headers: { 'Content-Type': 'multipart/form-data' } }); },
+  getProductoDetalle: (id, p) => axios.get(`${API_URL}/api/estadisticas/producto-detalle`, { params: { producto_id: id, ...p } }),
+  getIngresosPorPeriodo: (p) => axios.get(`${API_URL}/api/estadisticas/ingresos-por-periodo`, { params: p }),
   getProductos: (p) => axios.get(`${API_URL}/api/productos`, { params: p }),
   createProducto: (d) => axios.post(`${API_URL}/api/productos`, d),
   updateProducto: (id, d) => axios.put(`${API_URL}/api/productos/${id}`, d),
@@ -146,7 +153,7 @@ function LoginPage({ onLogin }) {
 }
 
 // Sidebar
-function Sidebar({ activeView, setActiveView, user, onLogout }) {
+function Sidebar({ activeView, setActiveView, user, onLogout, onNavigate }) {
   const isAdmin = user?.role === 'admin';
   const check = (m) => isAdmin || user?.permisos?.[m]?.ver;
 
@@ -199,10 +206,12 @@ function Sidebar({ activeView, setActiveView, user, onLogout }) {
         )}
       </nav>
       <div className="p-4 border-t border-border">
-        <div className="flex items-center gap-3 mb-3">
-          <div className="w-10 h-10 bg-muted rounded-full flex items-center justify-center"><UserCircle size={24} className="text-muted-foreground" /></div>
-          <div className="flex-1 min-w-0"><p className="font-medium text-sm truncate">{user?.nombre || user?.email}</p><p className="text-xs text-muted-foreground capitalize">{user?.role}</p></div>
-        </div>
+        <button onClick={() => onNavigate('perfil')} className="flex items-center gap-3 mb-3 w-full hover:bg-muted rounded-lg p-2 cursor-pointer" data-testid="sidebar-perfil-btn">
+          <div className="w-10 h-10 bg-muted rounded-full flex items-center justify-center overflow-hidden">
+            {user?.foto_url ? <img src={user.foto_url} alt="" className="w-full h-full object-cover" /> : <UserCircle size={24} className="text-muted-foreground" />}
+          </div>
+          <div className="flex-1 min-w-0 text-left"><p className="font-medium text-sm truncate">{user?.nombre || user?.email}</p><p className="text-xs text-muted-foreground capitalize">{user?.role}</p></div>
+        </button>
         <button onClick={onLogout} className="w-full flex items-center justify-center gap-2 px-4 py-2 text-red-600 hover:bg-red-50 rounded-lg" data-testid="logout-btn">
           <SignOut size={18} /><span className="text-sm font-medium">Cerrar Sesión</span>
         </button>
@@ -470,6 +479,109 @@ const WIDGET_DEFINITIONS = {
   'table-top-clientes': { label: 'Tabla Top Clientes', category: 'table', minW: 4, minH: 3 },
   'alerta-stock': { label: 'Alertas de Stock', category: 'alert', minW: 6, minH: 2 },
 };
+
+// ==================== PERFIL VIEW ====================
+function PerfilView({ user, onProfileUpdate }) {
+  const [perfil, setPerfil] = useState(null);
+  const [form, setForm] = useState({});
+  const [passForm, setPassForm] = useState({ password_actual: '', password_nueva: '', password_confirmar: '' });
+  const [saving, setSaving] = useState(false);
+  const [passMsg, setPassMsg] = useState('');
+  const [profileMsg, setProfileMsg] = useState('');
+
+  useEffect(() => {
+    api.getPerfil().then(r => {
+      setPerfil(r.data);
+      setForm({ nombre: r.data.nombre || '', telefono: r.data.telefono || '', direccion: r.data.direccion || '', ciudad: r.data.ciudad || '' });
+    });
+  }, []);
+
+  const handleSaveProfile = async () => {
+    setSaving(true); setProfileMsg('');
+    try {
+      await api.updatePerfil(form);
+      setProfileMsg('Perfil actualizado');
+      if (onProfileUpdate) onProfileUpdate();
+    } catch (e) { setProfileMsg(formatApiError(e.response?.data?.detail)); }
+    finally { setSaving(false); }
+  };
+
+  const handleChangePassword = async () => {
+    setPassMsg('');
+    if (passForm.password_nueva !== passForm.password_confirmar) return setPassMsg('Las contraseñas no coinciden');
+    if (passForm.password_nueva.length < 4) return setPassMsg('Mínimo 4 caracteres');
+    setSaving(true);
+    try {
+      await api.changePassword({ password_actual: passForm.password_actual, password_nueva: passForm.password_nueva });
+      setPassMsg('Contraseña actualizada');
+      setPassForm({ password_actual: '', password_nueva: '', password_confirmar: '' });
+    } catch (e) { setPassMsg(formatApiError(e.response?.data?.detail)); }
+    finally { setSaving(false); }
+  };
+
+  const handleFotoUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const res = await api.uploadFoto(file);
+      setPerfil({ ...perfil, foto_url: res.data.foto_url });
+      if (onProfileUpdate) onProfileUpdate();
+    } catch (err) { alert(formatApiError(err.response?.data?.detail)); }
+  };
+
+  if (!perfil) return <div className="p-8 text-center">Cargando perfil...</div>;
+
+  return (
+    <div className="max-w-2xl mx-auto space-y-6" data-testid="perfil-view">
+      <h2 className="text-2xl font-heading font-semibold">Mi Perfil</h2>
+
+      {/* Foto + Info */}
+      <div className="bg-white border border-border rounded-lg p-6">
+        <div className="flex items-center gap-6 mb-6">
+          <div className="relative group">
+            <div className="w-20 h-20 rounded-full bg-muted flex items-center justify-center overflow-hidden border-2 border-border">
+              {perfil.foto_url ? <img src={perfil.foto_url} alt="" className="w-full h-full object-cover" /> : <UserCircle size={48} className="text-muted-foreground" />}
+            </div>
+            <label className="absolute inset-0 rounded-full bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 cursor-pointer transition-opacity">
+              <Camera size={24} className="text-white" />
+              <input type="file" accept="image/*" onChange={handleFotoUpload} className="hidden" data-testid="foto-upload" />
+            </label>
+          </div>
+          <div>
+            <h3 className="text-lg font-semibold">{perfil.nombre || perfil.email}</h3>
+            <p className="text-muted-foreground text-sm">{perfil.email}</p>
+            <span className="badge bg-purple-100 text-purple-800 capitalize mt-1 inline-block">{perfil.role}</span>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
+          <div className="form-group"><label className="form-label">Nombre</label><input type="text" value={form.nombre} onChange={(e) => setForm({...form, nombre: e.target.value})} className="form-input" data-testid="perfil-nombre" /></div>
+          <div className="form-group"><label className="form-label">Teléfono</label><input type="text" value={form.telefono} onChange={(e) => setForm({...form, telefono: e.target.value})} className="form-input" data-testid="perfil-telefono" /></div>
+          <div className="form-group"><label className="form-label">Ciudad</label><input type="text" value={form.ciudad} onChange={(e) => setForm({...form, ciudad: e.target.value})} className="form-input" /></div>
+          <div className="form-group"><label className="form-label">Dirección</label><input type="text" value={form.direccion} onChange={(e) => setForm({...form, direccion: e.target.value})} className="form-input" /></div>
+        </div>
+        {profileMsg && <p className={`text-sm mt-2 ${profileMsg.includes('actualizado') ? 'text-green-600' : 'text-red-600'}`}>{profileMsg}</p>}
+        <button onClick={handleSaveProfile} disabled={saving} className="mt-4 bg-[#E63946] text-white px-4 py-2 rounded-md hover:bg-[#D90429] disabled:opacity-50" data-testid="save-perfil-btn">
+          {saving ? 'Guardando...' : 'Guardar Cambios'}
+        </button>
+      </div>
+
+      {/* Cambiar contraseña */}
+      <div className="bg-white border border-border rounded-lg p-6">
+        <h3 className="font-semibold mb-4">Cambiar Contraseña</h3>
+        <div className="space-y-4 max-w-md">
+          <div className="form-group"><label className="form-label">Contraseña actual</label><input type="password" value={passForm.password_actual} onChange={(e) => setPassForm({...passForm, password_actual: e.target.value})} className="form-input" data-testid="pass-actual" /></div>
+          <div className="form-group"><label className="form-label">Nueva contraseña</label><input type="password" value={passForm.password_nueva} onChange={(e) => setPassForm({...passForm, password_nueva: e.target.value})} className="form-input" data-testid="pass-nueva" /></div>
+          <div className="form-group"><label className="form-label">Confirmar nueva contraseña</label><input type="password" value={passForm.password_confirmar} onChange={(e) => setPassForm({...passForm, password_confirmar: e.target.value})} className="form-input" data-testid="pass-confirmar" /></div>
+        </div>
+        {passMsg && <p className={`text-sm mt-2 ${passMsg.includes('actualizada') ? 'text-green-600' : 'text-red-600'}`}>{passMsg}</p>}
+        <button onClick={handleChangePassword} disabled={saving || !passForm.password_actual || !passForm.password_nueva} className="mt-4 bg-[#457B9D] text-white px-4 py-2 rounded-md hover:bg-[#3A6A8A] disabled:opacity-50" data-testid="change-pass-btn">
+          Cambiar Contraseña
+        </button>
+      </div>
+    </div>
+  );
+}
 
 // User Selector for sharing
 function UserSelector({ selectedUsers, onChange }) {
@@ -988,20 +1100,33 @@ function DashboardView({ user }) {
 // Other Views (simplified)
 function EstadisticasView() {
   const [periodo, setPeriodo] = useState('mes');
+  const [fechaDesde, setFechaDesde] = useState('');
+  const [fechaHasta, setFechaHasta] = useState('');
   const [data, setData] = useState({});
   const [loading, setLoading] = useState(true);
+  const [showProductoModal, setShowProductoModal] = useState(false);
+  const [productos, setProductos] = useState([]);
+  const [selectedProducto, setSelectedProducto] = useState(null);
+  const [productoStats, setProductoStats] = useState(null);
+  const [ingresos, setIngresos] = useState([]);
 
-  useEffect(() => {
+  const loadData = useCallback(() => {
     setLoading(true);
+    const fp = { periodo, limite: 24 };
+    const fd = {};
+    if (fechaDesde) { fp.fecha_desde = fechaDesde; fd.fecha_desde = fechaDesde; }
+    if (fechaHasta) { fp.fecha_hasta = fechaHasta; fd.fecha_hasta = fechaHasta; }
+
     Promise.all([
-      api.getVentasPorPeriodo({ periodo, limite: 12 }),
-      api.getComprasPorPeriodo({ periodo, limite: 12 }),
-      api.getProductosMasVendidos({ limite: 15 }),
-      api.getVentasPorCliente({ limite: 10 }),
+      api.getVentasPorPeriodo(fp),
+      api.getComprasPorPeriodo(fp),
+      api.getProductosMasVendidos({ limite: 15, ...fd }),
+      api.getVentasPorCliente({ limite: 10, ...fd }),
       api.getStockPorCategoria(),
       api.getGastosPorCategoria(),
-      api.getResumenGeneral()
-    ]).then(([vp, cp, pmv, vc, sc, gc, res]) => {
+      api.getResumenGeneral(fd),
+      api.getIngresosPorPeriodo(fp)
+    ]).then(([vp, cp, pmv, vc, sc, gc, res, ing]) => {
       setData({
         ventasPeriodo: vp.data.data || [],
         comprasPeriodo: cp.data.data || [],
@@ -1011,21 +1136,47 @@ function EstadisticasView() {
         gastosCategoria: gc.data.data || [],
         resumen: res.data
       });
+      setIngresos(ing.data.data || []);
     }).finally(() => setLoading(false));
-  }, [periodo]);
+  }, [periodo, fechaDesde, fechaHasta]);
+
+  useEffect(() => { loadData(); }, [loadData]);
+
+  const openProductoDetail = async () => {
+    if (productos.length === 0) { const r = await api.getProductos({}); setProductos(r.data.productos || []); }
+    setShowProductoModal(true);
+  };
+
+  const loadProductoStats = async (id) => {
+    setSelectedProducto(id);
+    const r = await api.getProductoDetalle(id, { periodo, limite: 12 });
+    setProductoStats(r.data);
+  };
 
   if (loading) return <div className="p-8 text-center">Cargando...</div>;
 
   return (
     <div className="space-y-6" data-testid="estadisticas-view">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <h2 className="text-2xl font-heading font-semibold">Estadísticas</h2>
-        <select value={periodo} onChange={(e) => setPeriodo(e.target.value)} className="form-input w-40">
-          <option value="dia">Por Día</option>
-          <option value="semana">Por Semana</option>
-          <option value="mes">Por Mes</option>
-          <option value="año">Por Año</option>
-        </select>
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-2 bg-white border border-border rounded-lg px-3 py-1.5">
+            <CalendarBlank size={16} className="text-muted-foreground" />
+            <input type="date" value={fechaDesde} onChange={(e) => setFechaDesde(e.target.value)} className="text-sm border-0 focus:ring-0 p-0 w-32 bg-transparent" data-testid="fecha-desde" />
+            <span className="text-muted-foreground text-sm">-</span>
+            <input type="date" value={fechaHasta} onChange={(e) => setFechaHasta(e.target.value)} className="text-sm border-0 focus:ring-0 p-0 w-32 bg-transparent" data-testid="fecha-hasta" />
+            {(fechaDesde || fechaHasta) && <button onClick={() => { setFechaDesde(''); setFechaHasta(''); }} className="text-red-500 hover:text-red-700"><X size={14} /></button>}
+          </div>
+          <select value={periodo} onChange={(e) => setPeriodo(e.target.value)} className="form-input w-40" data-testid="periodo-select">
+            <option value="dia">Por Día</option>
+            <option value="semana">Por Semana</option>
+            <option value="mes">Por Mes</option>
+            <option value="año">Por Año</option>
+          </select>
+          <button onClick={openProductoDetail} className="flex items-center gap-2 px-3 py-2 bg-[#457B9D] text-white rounded-lg hover:bg-[#3A6A8A] text-sm" data-testid="producto-stats-btn">
+            <Funnel size={16} /> Análisis Producto
+          </button>
+        </div>
       </div>
       
       {data.resumen && (
@@ -1036,6 +1187,25 @@ function EstadisticasView() {
           <div className="stat-card"><p className="stat-label">Total Gastos</p><p className="stat-value text-yellow-600">{formatGs(data.resumen.gastos?.total)}</p></div>
           <div className="stat-card"><p className="stat-label">Utilidad Neta</p><p className={`stat-value ${data.resumen.utilidad_neta >= 0 ? 'text-green-600' : 'text-red-600'}`}>{formatGs(data.resumen.utilidad_neta)}</p></div>
           <div className="stat-card"><p className="stat-label">Valor Stock</p><p className="stat-value text-blue-600">{formatGs(data.resumen.stock?.valor_venta)}</p></div>
+        </div>
+      )}
+
+      {/* Ingresos vs Gastos vs Compras */}
+      {ingresos.length > 0 && (
+        <div className="bg-white border border-border rounded-lg p-6 h-80">
+          <h3 className="font-semibold mb-4">Ingresos vs Compras vs Gastos</h3>
+          <ResponsiveContainer width="100%" height="85%">
+            <BarChart data={ingresos}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+              <XAxis dataKey="periodo" tick={{ fontSize: 10 }} />
+              <YAxis tick={{ fontSize: 10 }} tickFormatter={formatGsShort} />
+              <Tooltip content={<CustomTooltip />} />
+              <Legend />
+              <Bar dataKey="ingresos" name="Ingresos" fill="#2A9D8F" radius={[4, 4, 0, 0]} />
+              <Bar dataKey="compras" name="Compras" fill="#457B9D" radius={[4, 4, 0, 0]} />
+              <Bar dataKey="gastos" name="Gastos" fill="#E9C46A" radius={[4, 4, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
         </div>
       )}
 
@@ -1067,6 +1237,49 @@ function EstadisticasView() {
           </ResponsiveContainer>
         </div>
       </div>
+
+      {/* Análisis por Producto Modal */}
+      <Modal isOpen={showProductoModal} onClose={() => { setShowProductoModal(false); setProductoStats(null); setSelectedProducto(null); }} title="Análisis por Producto" size="xl">
+        <div className="space-y-4">
+          <div className="form-group">
+            <label className="form-label">Seleccionar Producto</label>
+            <select value={selectedProducto || ''} onChange={(e) => e.target.value && loadProductoStats(e.target.value)} className="form-input" data-testid="producto-detail-select">
+              <option value="">Elegir producto...</option>
+              {productos.map(p => <option key={p.id} value={p.id}>{p.codigo} - {p.nombre} {p.variante ? `(${p.variante})` : ''}</option>)}
+            </select>
+          </div>
+          {productoStats && (
+            <div className="space-y-4">
+              <div className="bg-muted rounded-lg p-4">
+                <h4 className="font-semibold">{productoStats.producto?.nombre}</h4>
+                <div className="flex gap-4 mt-2 text-sm">
+                  <span>Stock: <strong>{productoStats.producto?.stock}</strong></span>
+                  <span>Costo: <strong>{formatGs(productoStats.producto?.costo)}</strong></span>
+                  <span>Precio: <strong>{formatGs(productoStats.producto?.precio_con_iva)}</strong></span>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="bg-white border rounded-lg p-4">
+                  <h4 className="font-semibold text-sm mb-2 text-green-700">Ventas por Período</h4>
+                  {productoStats.ventas.length > 0 ? (
+                    <ResponsiveContainer width="100%" height={200}>
+                      <BarChart data={productoStats.ventas}><CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="periodo" tick={{ fontSize: 10 }} /><YAxis /><Tooltip content={<CustomTooltip />} /><Bar dataKey="cantidad" fill="#2A9D8F" name="Cantidad" /><Bar dataKey="total" fill="#E63946" name="Total" /></BarChart>
+                    </ResponsiveContainer>
+                  ) : <p className="text-sm text-muted-foreground">Sin ventas registradas</p>}
+                </div>
+                <div className="bg-white border rounded-lg p-4">
+                  <h4 className="font-semibold text-sm mb-2 text-blue-700">Compras por Período</h4>
+                  {productoStats.compras.length > 0 ? (
+                    <ResponsiveContainer width="100%" height={200}>
+                      <BarChart data={productoStats.compras}><CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="periodo" tick={{ fontSize: 10 }} /><YAxis /><Tooltip content={<CustomTooltip />} /><Bar dataKey="cantidad" fill="#457B9D" name="Cantidad" /></BarChart>
+                    </ResponsiveContainer>
+                  ) : <p className="text-sm text-muted-foreground">Sin compras registradas</p>}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </Modal>
     </div>
   );
 }
@@ -1195,6 +1408,7 @@ function ProductosView({ user }) {
 function VentasView({ user }) {
   const [ventas, setVentas] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [clientes, setClientes] = useState([]);
   const [productos, setProductos] = useState([]);
@@ -1246,6 +1460,10 @@ function VentasView({ user }) {
         <h2 className="text-2xl font-heading font-semibold">Ventas</h2>
         <button onClick={openNew} className="flex items-center gap-2 px-4 py-2 bg-[#E63946] text-white rounded-lg hover:bg-[#D90429]" data-testid="add-venta-btn"><Plus size={18} /> Nueva Venta</button>
       </div>
+      <div className="relative max-w-md">
+        <MagnifyingGlass size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+        <input type="text" placeholder="Buscar por cliente, fecha..." value={search} onChange={(e) => setSearch(e.target.value)} className="form-input pl-10" data-testid="ventas-search" />
+      </div>
       <div className="bg-white border border-border rounded-md">
         <div className="overflow-x-auto max-h-[600px]">
           <table className="data-table">
@@ -1253,7 +1471,7 @@ function VentasView({ user }) {
             <tbody>
               {loading ? <tr><td colSpan={5} className="text-center py-8">Cargando...</td></tr>
               : ventas.length === 0 ? <tr><td colSpan={5} className="text-center py-8">Sin ventas registradas</td></tr>
-              : ventas.map(v => (
+              : ventas.filter(v => !search || v.cliente_nombre?.toLowerCase().includes(search.toLowerCase()) || v.fecha?.includes(search)).map(v => (
                 <tr key={v.id}><td>{new Date(v.fecha).toLocaleDateString('es-PY')}</td><td className="font-medium">{v.cliente_nombre}</td><td className="text-center">{v.items?.length || 0}</td><td className="text-right price-gs">{formatGs(v.total)}</td><td className="text-right price-gs text-green-600">{formatGs(v.utilidad)}</td></tr>
               ))}
             </tbody>
@@ -1312,6 +1530,7 @@ function VentasView({ user }) {
 function ComprasView({ user }) {
   const [compras, setCompras] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [proveedores, setProveedores] = useState([]);
   const [productos, setProductos] = useState([]);
@@ -1360,6 +1579,10 @@ function ComprasView({ user }) {
         <h2 className="text-2xl font-heading font-semibold">Compras</h2>
         <button onClick={openNew} className="flex items-center gap-2 px-4 py-2 bg-[#E63946] text-white rounded-lg hover:bg-[#D90429]" data-testid="add-compra-btn"><Plus size={18} /> Nueva Compra</button>
       </div>
+      <div className="relative max-w-md">
+        <MagnifyingGlass size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+        <input type="text" placeholder="Buscar por proveedor, factura..." value={search} onChange={(e) => setSearch(e.target.value)} className="form-input pl-10" data-testid="compras-search" />
+      </div>
       <div className="bg-white border border-border rounded-md">
         <div className="overflow-x-auto max-h-[600px]">
           <table className="data-table">
@@ -1367,7 +1590,7 @@ function ComprasView({ user }) {
             <tbody>
               {loading ? <tr><td colSpan={5} className="text-center py-8">Cargando...</td></tr>
               : compras.length === 0 ? <tr><td colSpan={5} className="text-center py-8">Sin compras registradas</td></tr>
-              : compras.map(c => (
+              : compras.filter(c => !search || c.proveedor_nombre?.toLowerCase().includes(search.toLowerCase()) || c.factura?.toLowerCase().includes(search.toLowerCase())).map(c => (
                 <tr key={c.id}><td>{new Date(c.fecha).toLocaleDateString('es-PY')}</td><td className="font-medium">{c.proveedor_nombre}</td><td>{c.factura || '-'}</td><td className="text-center">{c.items?.length || 0}</td><td className="text-right price-gs">{formatGs(c.total)}</td></tr>
               ))}
             </tbody>
@@ -1428,6 +1651,7 @@ function ComprasView({ user }) {
 function ClientesView({ user }) {
   const [clientes, setClientes] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [editItem, setEditItem] = useState(null);
   const [form, setForm] = useState({ nombre: '', ruc: '', telefono: '', direccion: '', ciudad: '', tipo: 'Odontólogo' });
@@ -1458,13 +1682,17 @@ function ClientesView({ user }) {
         <h2 className="text-2xl font-heading font-semibold">Clientes</h2>
         <button onClick={openNew} className="flex items-center gap-2 px-4 py-2 bg-[#E63946] text-white rounded-lg hover:bg-[#D90429]" data-testid="add-cliente-btn"><Plus size={18} /> Nuevo Cliente</button>
       </div>
+      <div className="relative max-w-md">
+        <MagnifyingGlass size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+        <input type="text" placeholder="Buscar por nombre, RUC, ciudad..." value={search} onChange={(e) => setSearch(e.target.value)} className="form-input pl-10" data-testid="clientes-search" />
+      </div>
       <div className="bg-white border border-border rounded-md">
         <table className="data-table">
           <thead><tr><th>Nombre</th><th>RUC</th><th>Teléfono</th><th>Ciudad</th><th>Tipo</th>{isAdmin && <th className="text-center">Acciones</th>}</tr></thead>
           <tbody>
             {loading ? <tr><td colSpan={6} className="text-center py-8">Cargando...</td></tr>
             : clientes.length === 0 ? <tr><td colSpan={6} className="text-center py-8">Sin clientes</td></tr>
-            : clientes.map(c => (
+            : clientes.filter(c => !search || c.nombre?.toLowerCase().includes(search.toLowerCase()) || c.ruc?.includes(search) || c.ciudad?.toLowerCase().includes(search.toLowerCase())).map(c => (
               <tr key={c.id}><td className="font-medium">{c.nombre}</td><td>{c.ruc || '-'}</td><td>{c.telefono || '-'}</td><td>{c.ciudad || '-'}</td><td><span className="badge bg-blue-100 text-blue-800">{c.tipo}</span></td>
               {isAdmin && <td className="text-center"><div className="flex items-center justify-center gap-1"><button onClick={() => openEdit(c)} className="p-1 hover:bg-yellow-50 rounded text-yellow-600"><Pencil size={16} /></button><button onClick={() => handleDelete(c.id)} className="p-1 hover:bg-red-50 rounded text-red-600"><Trash size={16} /></button></div></td>}</tr>
             ))}
@@ -1497,6 +1725,7 @@ function ClientesView({ user }) {
 function ProveedoresView({ user }) {
   const [proveedores, setProveedores] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [editItem, setEditItem] = useState(null);
   const [form, setForm] = useState({ nombre: '', ruc: '', direccion: '', contacto: '', telefono: '' });
@@ -1527,13 +1756,17 @@ function ProveedoresView({ user }) {
         <h2 className="text-2xl font-heading font-semibold">Proveedores</h2>
         <button onClick={openNew} className="flex items-center gap-2 px-4 py-2 bg-[#E63946] text-white rounded-lg hover:bg-[#D90429]" data-testid="add-proveedor-btn"><Plus size={18} /> Nuevo Proveedor</button>
       </div>
+      <div className="relative max-w-md">
+        <MagnifyingGlass size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+        <input type="text" placeholder="Buscar por nombre, contacto..." value={search} onChange={(e) => setSearch(e.target.value)} className="form-input pl-10" data-testid="proveedores-search" />
+      </div>
       <div className="bg-white border border-border rounded-md">
         <table className="data-table">
           <thead><tr><th>Nombre</th><th>RUC</th><th>Contacto</th><th>Teléfono</th><th>Dirección</th>{isAdmin && <th className="text-center">Acciones</th>}</tr></thead>
           <tbody>
             {loading ? <tr><td colSpan={6} className="text-center py-8">Cargando...</td></tr>
             : proveedores.length === 0 ? <tr><td colSpan={6} className="text-center py-8">Sin proveedores</td></tr>
-            : proveedores.map(p => (
+            : proveedores.filter(p => !search || p.nombre?.toLowerCase().includes(search.toLowerCase()) || p.contacto?.toLowerCase().includes(search.toLowerCase())).map(p => (
               <tr key={p.id}><td className="font-medium">{p.nombre}</td><td>{p.ruc || '-'}</td><td>{p.contacto || '-'}</td><td>{p.telefono || '-'}</td><td className="text-sm">{p.direccion || '-'}</td>
               {isAdmin && <td className="text-center"><div className="flex items-center justify-center gap-1"><button onClick={() => openEdit(p)} className="p-1 hover:bg-yellow-50 rounded text-yellow-600"><Pencil size={16} /></button><button onClick={() => handleDelete(p.id)} className="p-1 hover:bg-red-50 rounded text-red-600"><Trash size={16} /></button></div></td>}</tr>
             ))}
@@ -1563,6 +1796,7 @@ function ProveedoresView({ user }) {
 function GastosView({ user }) {
   const [gastos, setGastos] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [form, setForm] = useState({ fecha: new Date().toISOString().split('T')[0], categoria: '', descripcion: '', monto: 0, iva_pct: 10, proveedor: '' });
 
@@ -1583,13 +1817,17 @@ function GastosView({ user }) {
         <div><h2 className="text-2xl font-heading font-semibold">Gastos</h2><p className="text-muted-foreground">Total: {formatGs(total)}</p></div>
         <button onClick={() => { setForm({ fecha: new Date().toISOString().split('T')[0], categoria: '', descripcion: '', monto: 0, iva_pct: 10, proveedor: '' }); setShowModal(true); }} className="flex items-center gap-2 px-4 py-2 bg-[#E63946] text-white rounded-lg hover:bg-[#D90429]" data-testid="add-gasto-btn"><Plus size={18} /> Nuevo Gasto</button>
       </div>
+      <div className="relative max-w-md">
+        <MagnifyingGlass size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+        <input type="text" placeholder="Buscar por categoría, descripción..." value={search} onChange={(e) => setSearch(e.target.value)} className="form-input pl-10" data-testid="gastos-search" />
+      </div>
       <div className="bg-white border border-border rounded-md">
         <table className="data-table">
           <thead><tr><th>Fecha</th><th>Categoría</th><th>Descripción</th><th>Proveedor</th><th className="text-right">Monto</th></tr></thead>
           <tbody>
             {loading ? <tr><td colSpan={5} className="text-center py-8">Cargando...</td></tr>
             : gastos.length === 0 ? <tr><td colSpan={5} className="text-center py-8">Sin gastos registrados</td></tr>
-            : gastos.map(g => (
+            : gastos.filter(g => !search || g.categoria?.toLowerCase().includes(search.toLowerCase()) || g.descripcion?.toLowerCase().includes(search.toLowerCase()) || g.proveedor?.toLowerCase().includes(search.toLowerCase())).map(g => (
               <tr key={g.id}><td>{new Date(g.fecha).toLocaleDateString('es-PY')}</td><td><span className="badge bg-orange-100 text-orange-800">{g.categoria}</span></td><td>{g.descripcion}</td><td>{g.proveedor || '-'}</td><td className="text-right price-gs">{formatGs(g.monto)}</td></tr>
             ))}
           </tbody>
@@ -1719,6 +1957,7 @@ function App() {
       case 'stock-historial': return <StockHistorialView />;
       case 'usuarios': return <UsuariosView />;
       case 'auditoria': return <AuditoriaView />;
+      case 'perfil': return <PerfilView user={user} onProfileUpdate={() => checkAuth()} />;
       default: return <DashboardView user={user} />;
     }
   };
@@ -1726,7 +1965,7 @@ function App() {
   return (
     <AuthContext.Provider value={{ user, setUser }}>
       <div className="min-h-screen bg-background">
-        <Sidebar activeView={activeView} setActiveView={setActiveView} user={user} onLogout={handleLogout} />
+        <Sidebar activeView={activeView} setActiveView={setActiveView} user={user} onLogout={handleLogout} onNavigate={setActiveView} />
         <main className="ml-64 p-8">{renderView()}</main>
       </div>
     </AuthContext.Provider>

@@ -1581,6 +1581,195 @@ def get_metas_historial(request: Request, limite: int = 12):
     
     return {"historial": resultado}
 
+# ============ PERFIL DE USUARIO ============
+@app.get("/api/perfil")
+def get_perfil(request: Request):
+    user = get_current_user(request)
+    u = usuarios_col.find_one({"_id": ObjectId(user["id"])}, {"password_hash": 0})
+    if not u:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+    return {
+        "id": str(u["_id"]),
+        "email": u["email"],
+        "nombre": u.get("nombre", ""),
+        "telefono": u.get("telefono", ""),
+        "direccion": u.get("direccion", ""),
+        "ciudad": u.get("ciudad", ""),
+        "foto_url": u.get("foto_url", ""),
+        "role": u.get("role", "usuario"),
+        "created_at": u.get("created_at", "")
+    }
+
+@app.put("/api/perfil")
+def update_perfil(request: Request, data: dict):
+    user = get_current_user(request)
+    allowed = ["nombre", "telefono", "direccion", "ciudad"]
+    update_data = {k: v for k, v in data.items() if k in allowed and v is not None}
+    if not update_data:
+        raise HTTPException(status_code=400, detail="Sin datos para actualizar")
+    update_data["updated_at"] = datetime.now(timezone.utc).isoformat()
+    usuarios_col.update_one({"_id": ObjectId(user["id"])}, {"$set": update_data})
+    registrar_auditoria(user["id"], user["email"], "actualizar_perfil", "usuarios", {"campos": list(update_data.keys())})
+    return {"message": "Perfil actualizado"}
+
+@app.put("/api/perfil/password")
+def change_own_password(request: Request, data: dict):
+    user = get_current_user(request)
+    u = usuarios_col.find_one({"_id": ObjectId(user["id"])})
+    if not u:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+    if not bcrypt.checkpw(data.get("password_actual", "").encode('utf-8'), u["password_hash"].encode('utf-8')):
+        raise HTTPException(status_code=400, detail="Contraseña actual incorrecta")
+    new_pass = data.get("password_nueva", "")
+    if len(new_pass) < 4:
+        raise HTTPException(status_code=400, detail="La nueva contraseña debe tener al menos 4 caracteres")
+    new_hash = bcrypt.hashpw(new_pass.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+    usuarios_col.update_one({"_id": ObjectId(user["id"])}, {"$set": {"password_hash": new_hash}})
+    registrar_auditoria(user["id"], user["email"], "cambiar_password_propia", "usuarios", {})
+    return {"message": "Contraseña actualizada"}
+
+@app.post("/api/perfil/foto")
+async def upload_foto(request: Request):
+    user = get_current_user(request)
+    form = await request.form()
+    file = form.get("foto")
+    if not file:
+        raise HTTPException(status_code=400, detail="No se envió archivo")
+    import base64
+    content = await file.read()
+    if len(content) > 2 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="Archivo muy grande (máx 2MB)")
+    ext = file.filename.split(".")[-1].lower() if "." in file.filename else "png"
+    if ext not in ["jpg", "jpeg", "png", "webp"]:
+        raise HTTPException(status_code=400, detail="Solo imágenes jpg, png, webp")
+    b64 = base64.b64encode(content).decode('utf-8')
+    foto_url = f"data:image/{ext};base64,{b64}"
+    usuarios_col.update_one({"_id": ObjectId(user["id"])}, {"$set": {"foto_url": foto_url}})
+    registrar_auditoria(user["id"], user["email"], "cambiar_foto", "usuarios", {})
+    return {"message": "Foto actualizada", "foto_url": foto_url}
+
+# ============ ESTADÍSTICAS CON RANGO DE FECHAS ============
+def _fecha_match(fecha_desde, fecha_hasta):
+    """Build a $match stage for date filtering on string dates."""
+    if not fecha_desde and not fecha_hasta:
+        return None
+    match = {}
+    if fecha_desde:
+        match["$gte"] = fecha_desde
+    if fecha_hasta:
+        match["$lte"] = fecha_hasta + "T23:59:59"
+    return {"$match": {"fecha": match}}
+
+@app.get("/api/estadisticas/producto-detalle")
+def estadisticas_producto_detalle(request: Request, producto_id: str, periodo: str = "mes", limite: int = 12):
+    """Estadísticas detalladas de un producto específico: ventas y compras por periodo."""
+    user = get_current_user(request)
+    if periodo == "dia":
+        gf = "%Y-%m-%d"
+    elif periodo == "semana":
+        gf = "%Y-W%V"
+    elif periodo == "año":
+        gf = "%Y"
+    else:
+        gf = "%Y-%m"
+
+    # Ventas del producto
+    ventas_pipeline = [
+        {"$unwind": "$items"},
+        {"$match": {"items.producto_id": producto_id}},
+        {"$addFields": {"fecha_parsed": {"$dateFromString": {"dateString": "$fecha", "onError": None}}}},
+        {"$match": {"fecha_parsed": {"$ne": None}}},
+        {"$group": {
+            "_id": {"$dateToString": {"format": gf, "date": "$fecha_parsed"}},
+            "cantidad": {"$sum": "$items.cantidad"},
+            "total": {"$sum": {"$multiply": ["$items.cantidad", "$items.precio_unitario"]}},
+            "utilidad": {"$sum": {"$multiply": ["$items.cantidad", {"$subtract": ["$items.precio_unitario", "$items.costo_unitario"]}]}}
+        }},
+        {"$sort": {"_id": -1}},
+        {"$limit": limite}
+    ]
+    ventas = list(ventas_col.aggregate(ventas_pipeline))
+    ventas.reverse()
+
+    # Compras del producto
+    compras_pipeline = [
+        {"$unwind": "$items"},
+        {"$match": {"items.producto_id": producto_id}},
+        {"$addFields": {"fecha_parsed": {"$dateFromString": {"dateString": "$fecha", "onError": None}}}},
+        {"$match": {"fecha_parsed": {"$ne": None}}},
+        {"$group": {
+            "_id": {"$dateToString": {"format": gf, "date": "$fecha_parsed"}},
+            "cantidad": {"$sum": "$items.cantidad"},
+            "total": {"$sum": {"$multiply": ["$items.cantidad", "$items.precio_unitario"]}}
+        }},
+        {"$sort": {"_id": -1}},
+        {"$limit": limite}
+    ]
+    compras = list(compras_col.aggregate(compras_pipeline))
+    compras.reverse()
+
+    # Info del producto
+    prod = productos_col.find_one({"_id": ObjectId(producto_id)}, {"_id": 0, "codigo": 1, "nombre": 1, "variante": 1, "stock": 1, "costo": 1, "precio_con_iva": 1})
+
+    return {
+        "producto": prod,
+        "ventas": [{"periodo": v["_id"], "cantidad": v["cantidad"], "total": v["total"], "utilidad": v["utilidad"]} for v in ventas],
+        "compras": [{"periodo": c["_id"], "cantidad": c["cantidad"], "total": c["total"]} for c in compras]
+    }
+
+@app.get("/api/estadisticas/ingresos-por-periodo")
+def estadisticas_ingresos(request: Request, periodo: str = "mes", limite: int = 12):
+    """Ingresos vs Gastos por periodo para saber qué mes entró más plata."""
+    user = get_current_user(request)
+    if periodo == "dia":
+        gf = "%Y-%m-%d"
+    elif periodo == "semana":
+        gf = "%Y-W%V"
+    elif periodo == "año":
+        gf = "%Y"
+    else:
+        gf = "%Y-%m"
+
+    ventas_p = list(ventas_col.aggregate([
+        {"$addFields": {"fecha_parsed": {"$dateFromString": {"dateString": "$fecha", "onError": None}}}},
+        {"$match": {"fecha_parsed": {"$ne": None}}},
+        {"$group": {"_id": {"$dateToString": {"format": gf, "date": "$fecha_parsed"}}, "ingresos": {"$sum": "$total"}, "utilidad": {"$sum": "$utilidad"}}},
+        {"$sort": {"_id": -1}}, {"$limit": limite}
+    ]))
+
+    gastos_p = list(gastos_col.aggregate([
+        {"$addFields": {"fecha_parsed": {"$dateFromString": {"dateString": "$fecha", "onError": None}}}},
+        {"$match": {"fecha_parsed": {"$ne": None}}},
+        {"$group": {"_id": {"$dateToString": {"format": gf, "date": "$fecha_parsed"}}, "gastos": {"$sum": "$monto"}}},
+        {"$sort": {"_id": -1}}, {"$limit": limite}
+    ]))
+
+    compras_p = list(compras_col.aggregate([
+        {"$addFields": {"fecha_parsed": {"$dateFromString": {"dateString": "$fecha", "onError": None}}}},
+        {"$match": {"fecha_parsed": {"$ne": None}}},
+        {"$group": {"_id": {"$dateToString": {"format": gf, "date": "$fecha_parsed"}}, "compras": {"$sum": "$total"}}},
+        {"$sort": {"_id": -1}}, {"$limit": limite}
+    ]))
+
+    # Merge all periods
+    periodos = {}
+    for v in ventas_p:
+        periodos.setdefault(v["_id"], {"periodo": v["_id"], "ingresos": 0, "utilidad": 0, "gastos": 0, "compras": 0})
+        periodos[v["_id"]]["ingresos"] = v["ingresos"]
+        periodos[v["_id"]]["utilidad"] = v["utilidad"]
+    for g in gastos_p:
+        periodos.setdefault(g["_id"], {"periodo": g["_id"], "ingresos": 0, "utilidad": 0, "gastos": 0, "compras": 0})
+        periodos[g["_id"]]["gastos"] = g["gastos"]
+    for c in compras_p:
+        periodos.setdefault(c["_id"], {"periodo": c["_id"], "ingresos": 0, "utilidad": 0, "gastos": 0, "compras": 0})
+        periodos[c["_id"]]["compras"] = c["compras"]
+
+    resultado = sorted(periodos.values(), key=lambda x: x["periodo"])[-limite:]
+    for r in resultado:
+        r["neto"] = r["ingresos"] - r["gastos"] - r["compras"]
+
+    return {"data": resultado}
+
 # ============ PLANTILLAS COMPARTIDAS ============
 class PlantillaCreate(BaseModel):
     nombre: str
@@ -1719,8 +1908,10 @@ def aplicar_plantilla(request: Request, plantilla_id: str):
 @app.get("/api/estadisticas/ventas-por-periodo")
 def estadisticas_ventas_periodo(
     request: Request,
-    periodo: str = "mes",  # dia, semana, mes, año
-    limite: int = 12
+    periodo: str = "mes",
+    limite: int = 12,
+    fecha_desde: Optional[str] = None,
+    fecha_hasta: Optional[str] = None
 ):
     user = get_current_user(request)
     
@@ -1733,7 +1924,15 @@ def estadisticas_ventas_periodo(
     else:
         group_format = "%Y-%m"
     
-    pipeline = [
+    pipeline = []
+    if fecha_desde or fecha_hasta:
+        fecha_filter = {}
+        if fecha_desde:
+            fecha_filter["$gte"] = fecha_desde
+        if fecha_hasta:
+            fecha_filter["$lte"] = fecha_hasta + "T23:59:59"
+        pipeline.append({"$match": {"fecha": fecha_filter}})
+    pipeline.extend([
         {"$addFields": {
             "fecha_parsed": {"$dateFromString": {"dateString": "$fecha", "onError": None}}
         }},
@@ -1747,7 +1946,7 @@ def estadisticas_ventas_periodo(
         }},
         {"$sort": {"_id": -1}},
         {"$limit": limite}
-    ]
+    ])
     
     ventas = list(ventas_col.aggregate(pipeline))
     ventas.reverse()
@@ -1756,7 +1955,7 @@ def estadisticas_ventas_periodo(
                       "utilidad": v["utilidad"], "cantidad": v["cantidad"]} for v in ventas]}
 
 @app.get("/api/estadisticas/compras-por-periodo")
-def estadisticas_compras_periodo(request: Request, periodo: str = "mes", limite: int = 12):
+def estadisticas_compras_periodo(request: Request, periodo: str = "mes", limite: int = 12, fecha_desde: Optional[str] = None, fecha_hasta: Optional[str] = None):
     user = get_current_user(request)
     
     if periodo == "dia":
@@ -1768,7 +1967,13 @@ def estadisticas_compras_periodo(request: Request, periodo: str = "mes", limite:
     else:
         group_format = "%Y-%m"
     
-    pipeline = [
+    pipeline = []
+    if fecha_desde or fecha_hasta:
+        fecha_filter = {}
+        if fecha_desde: fecha_filter["$gte"] = fecha_desde
+        if fecha_hasta: fecha_filter["$lte"] = fecha_hasta + "T23:59:59"
+        pipeline.append({"$match": {"fecha": fecha_filter}})
+    pipeline.extend([
         {"$addFields": {"fecha_parsed": {"$dateFromString": {"dateString": "$fecha", "onError": None}}}},
         {"$match": {"fecha_parsed": {"$ne": None}}},
         {"$group": {
@@ -1778,7 +1983,7 @@ def estadisticas_compras_periodo(request: Request, periodo: str = "mes", limite:
         }},
         {"$sort": {"_id": -1}},
         {"$limit": limite}
-    ]
+    ])
     
     compras = list(compras_col.aggregate(pipeline))
     compras.reverse()
@@ -1786,10 +1991,16 @@ def estadisticas_compras_periodo(request: Request, periodo: str = "mes", limite:
     return {"data": [{"periodo": c["_id"], "total": c["total"], "cantidad": c["cantidad"]} for c in compras]}
 
 @app.get("/api/estadisticas/productos-mas-vendidos")
-def estadisticas_productos_vendidos(request: Request, limite: int = 10):
+def estadisticas_productos_vendidos(request: Request, limite: int = 10, fecha_desde: Optional[str] = None, fecha_hasta: Optional[str] = None):
     user = get_current_user(request)
     
-    pipeline = [
+    pipeline = []
+    if fecha_desde or fecha_hasta:
+        fecha_filter = {}
+        if fecha_desde: fecha_filter["$gte"] = fecha_desde
+        if fecha_hasta: fecha_filter["$lte"] = fecha_hasta + "T23:59:59"
+        pipeline.append({"$match": {"fecha": fecha_filter}})
+    pipeline.extend([
         {"$unwind": "$items"},
         {"$group": {
             "_id": "$items.producto_id",
@@ -1801,16 +2012,22 @@ def estadisticas_productos_vendidos(request: Request, limite: int = 10):
         }},
         {"$sort": {"cantidad": -1}},
         {"$limit": limite}
-    ]
+    ])
     
     productos = list(ventas_col.aggregate(pipeline))
     return {"data": productos}
 
 @app.get("/api/estadisticas/ventas-por-cliente")
-def estadisticas_ventas_cliente(request: Request, limite: int = 10):
+def estadisticas_ventas_cliente(request: Request, limite: int = 10, fecha_desde: Optional[str] = None, fecha_hasta: Optional[str] = None):
     user = get_current_user(request)
     
-    pipeline = [
+    pipeline = []
+    if fecha_desde or fecha_hasta:
+        fecha_filter = {}
+        if fecha_desde: fecha_filter["$gte"] = fecha_desde
+        if fecha_hasta: fecha_filter["$lte"] = fecha_hasta + "T23:59:59"
+        pipeline.append({"$match": {"fecha": fecha_filter}})
+    pipeline.extend([
         {"$group": {
             "_id": "$cliente_id",
             "nombre": {"$first": "$cliente_nombre"},
@@ -1820,16 +2037,22 @@ def estadisticas_ventas_cliente(request: Request, limite: int = 10):
         }},
         {"$sort": {"total_compras": -1}},
         {"$limit": limite}
-    ]
+    ])
     
     clientes = list(ventas_col.aggregate(pipeline))
     return {"data": clientes}
 
 @app.get("/api/estadisticas/compras-por-proveedor")
-def estadisticas_compras_proveedor(request: Request, limite: int = 10):
+def estadisticas_compras_proveedor(request: Request, limite: int = 10, fecha_desde: Optional[str] = None, fecha_hasta: Optional[str] = None):
     user = get_current_user(request)
     
-    pipeline = [
+    pipeline = []
+    if fecha_desde or fecha_hasta:
+        fecha_filter = {}
+        if fecha_desde: fecha_filter["$gte"] = fecha_desde
+        if fecha_hasta: fecha_filter["$lte"] = fecha_hasta + "T23:59:59"
+        pipeline.append({"$match": {"fecha": fecha_filter}})
+    pipeline.extend([
         {"$group": {
             "_id": "$proveedor_id",
             "nombre": {"$first": "$proveedor_nombre"},
@@ -1838,7 +2061,7 @@ def estadisticas_compras_proveedor(request: Request, limite: int = 10):
         }},
         {"$sort": {"total": -1}},
         {"$limit": limite}
-    ]
+    ])
     
     proveedores = list(compras_col.aggregate(pipeline))
     return {"data": proveedores}
@@ -1882,23 +2105,33 @@ def estadisticas_gastos_categoria(request: Request):
     return {"data": [{"categoria": g["_id"], "total": g["total"], "cantidad": g["cantidad"]} for g in gastos]}
 
 @app.get("/api/estadisticas/resumen-general")
-def estadisticas_resumen(request: Request):
+def estadisticas_resumen(request: Request, fecha_desde: Optional[str] = None, fecha_hasta: Optional[str] = None):
     user = get_current_user(request)
     
+    fecha_filter = {}
+    if fecha_desde: fecha_filter["$gte"] = fecha_desde
+    if fecha_hasta: fecha_filter["$lte"] = fecha_hasta + "T23:59:59"
+    venta_match = {"fecha": fecha_filter} if fecha_filter else {}
+    gasto_match = {"fecha": fecha_filter} if fecha_filter else {}
+    compra_match = {"fecha": fecha_filter} if fecha_filter else {}
+
     # Ventas
     ventas_total = list(ventas_col.aggregate([
+        {"$match": venta_match} if venta_match else {"$match": {}},
         {"$group": {"_id": None, "total": {"$sum": "$total"}, "utilidad": {"$sum": "$utilidad"}, "cantidad": {"$sum": 1}}}
     ]))
     ventas_data = ventas_total[0] if ventas_total else {"total": 0, "utilidad": 0, "cantidad": 0}
     
     # Compras
     compras_total = list(compras_col.aggregate([
+        {"$match": compra_match} if compra_match else {"$match": {}},
         {"$group": {"_id": None, "total": {"$sum": "$total"}, "cantidad": {"$sum": 1}}}
     ]))
     compras_data = compras_total[0] if compras_total else {"total": 0, "cantidad": 0}
     
     # Gastos
     gastos_total = list(gastos_col.aggregate([
+        {"$match": gasto_match} if gasto_match else {"$match": {}},
         {"$group": {"_id": None, "total": {"$sum": "$monto"}, "cantidad": {"$sum": 1}}}
     ]))
     gastos_data = gastos_total[0] if gastos_total else {"total": 0, "cantidad": 0}
