@@ -28,6 +28,8 @@ JWT_ALGORITHM = "HS256"
 ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "admin")
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "admin123")
 FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:3000")
+COOKIE_PATH = os.environ.get("COOKIE_PATH", "/")
+COOKIE_SECURE = os.environ.get("COOKIE_SECURE", "false").lower() == "true"
 
 app = FastAPI(title="PDS API", description="Sistema de Gestión de Insumos Odontológicos")
 
@@ -350,8 +352,8 @@ def login(request: Request, response: Response, data: LoginRequest):
     access_token = create_access_token(user_id, user["email"], user.get("role", "usuario"))
     refresh_token = create_refresh_token(user_id)
     
-    response.set_cookie(key="access_token", value=access_token, httponly=True, secure=False, samesite="lax", max_age=28800, path="/")
-    response.set_cookie(key="refresh_token", value=refresh_token, httponly=True, secure=False, samesite="lax", max_age=604800, path="/")
+    response.set_cookie(key="access_token", value=access_token, httponly=True, secure=COOKIE_SECURE, samesite="lax", max_age=28800, path=COOKIE_PATH)
+    response.set_cookie(key="refresh_token", value=refresh_token, httponly=True, secure=COOKIE_SECURE, samesite="lax", max_age=604800, path=COOKIE_PATH)
     
     registrar_auditoria(user_id, user["email"], "login", "auth", {"ip": ip}, ip)
     
@@ -371,8 +373,8 @@ def logout(request: Request, response: Response):
     except:
         pass
     
-    response.delete_cookie("access_token", path="/")
-    response.delete_cookie("refresh_token", path="/")
+    response.delete_cookie("access_token", path=COOKIE_PATH)
+    response.delete_cookie("refresh_token", path=COOKIE_PATH)
     return {"message": "Sesión cerrada"}
 
 @app.get("/api/auth/me")
@@ -395,7 +397,7 @@ def refresh_token(request: Request, response: Response):
             raise HTTPException(status_code=401, detail="Usuario no encontrado")
         
         access_token = create_access_token(str(user["_id"]), user["email"], user.get("role", "usuario"))
-        response.set_cookie(key="access_token", value=access_token, httponly=True, secure=False, samesite="lax", max_age=28800, path="/")
+        response.set_cookie(key="access_token", value=access_token, httponly=True, secure=COOKIE_SECURE, samesite="lax", max_age=28800, path=COOKIE_PATH)
         
         return {"message": "Token renovado"}
     except jwt.ExpiredSignatureError:
