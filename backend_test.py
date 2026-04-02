@@ -264,6 +264,110 @@ class PDSAPITester:
         
         return success
 
+    def test_estadisticas_endpoints(self):
+        """Test statistics endpoints for charts"""
+        print("\n   Testing statistics endpoints...")
+        
+        # Test ventas por periodo
+        for periodo in ['dia', 'semana', 'mes', 'año']:
+            success, data = self.run_test(
+                f"Estadísticas Ventas por {periodo}",
+                "GET",
+                "api/estadisticas/ventas-por-periodo",
+                200,
+                params={'periodo': periodo, 'limite': 12}
+            )
+            if not success:
+                return False
+            
+            ventas_data = data.get('data', [])
+            print(f"   Found {len(ventas_data)} records for ventas por {periodo}")
+        
+        # Test compras por periodo
+        success, data = self.run_test(
+            "Estadísticas Compras por Período",
+            "GET",
+            "api/estadisticas/compras-por-periodo",
+            200,
+            params={'periodo': 'mes', 'limite': 12}
+        )
+        if not success:
+            return False
+        
+        # Test productos mas vendidos
+        success, data = self.run_test(
+            "Estadísticas Productos Más Vendidos",
+            "GET",
+            "api/estadisticas/productos-mas-vendidos",
+            200,
+            params={'limite': 15}
+        )
+        if not success:
+            return False
+        
+        productos_data = data.get('data', [])
+        print(f"   Found {len(productos_data)} top productos")
+        
+        # Test ventas por cliente
+        success, data = self.run_test(
+            "Estadísticas Ventas por Cliente",
+            "GET",
+            "api/estadisticas/ventas-por-cliente",
+            200,
+            params={'limite': 10}
+        )
+        if not success:
+            return False
+        
+        # Test compras por proveedor
+        success, data = self.run_test(
+            "Estadísticas Compras por Proveedor",
+            "GET",
+            "api/estadisticas/compras-por-proveedor",
+            200,
+            params={'limite': 10}
+        )
+        if not success:
+            return False
+        
+        # Test stock por categoria
+        success, data = self.run_test(
+            "Estadísticas Stock por Categoría",
+            "GET",
+            "api/estadisticas/stock-por-categoria",
+            200
+        )
+        if not success:
+            return False
+        
+        stock_data = data.get('data', [])
+        print(f"   Found {len(stock_data)} categorías with stock")
+        
+        # Test gastos por categoria
+        success, data = self.run_test(
+            "Estadísticas Gastos por Categoría",
+            "GET",
+            "api/estadisticas/gastos-por-categoria",
+            200
+        )
+        if not success:
+            return False
+        
+        # Test resumen general
+        success, data = self.run_test(
+            "Estadísticas Resumen General",
+            "GET",
+            "api/estadisticas/resumen-general",
+            200
+        )
+        if not success:
+            return False
+        
+        resumen = data
+        print(f"   Resumen: Ventas {resumen.get('ventas', {}).get('total', 0)}, Stock {resumen.get('stock', {}).get('productos', 0)} productos")
+        
+        return True
+
     def test_reportes(self):
         """Test reports and CSV exports"""
         # Test ventas report
@@ -738,6 +842,7 @@ class PDSAPITester:
             self.test_compras_crud,
             self.test_gastos_crud,
             self.test_stock_movimientos,
+            self.test_estadisticas_endpoints,  # New test for statistics
             self.test_reportes,
             self.test_logout
         ]

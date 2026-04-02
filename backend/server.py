@@ -1344,6 +1344,238 @@ def reporte_stock_movimientos(
     
     return {"total": len(movimientos), "movimientos": serialize_docs(movimientos)}
 
+# ============ ESTADÍSTICAS AVANZADAS ============
+@app.get("/api/estadisticas/ventas-por-periodo")
+def estadisticas_ventas_periodo(
+    request: Request,
+    periodo: str = "mes",  # dia, semana, mes, año
+    limite: int = 12
+):
+    user = get_current_user(request)
+    
+    if periodo == "dia":
+        group_format = "%Y-%m-%d"
+    elif periodo == "semana":
+        group_format = "%Y-W%V"
+    elif periodo == "año":
+        group_format = "%Y"
+    else:
+        group_format = "%Y-%m"
+    
+    pipeline = [
+        {"$addFields": {
+            "fecha_parsed": {"$dateFromString": {"dateString": "$fecha", "onError": None}}
+        }},
+        {"$match": {"fecha_parsed": {"$ne": None}}},
+        {"$group": {
+            "_id": {"$dateToString": {"format": group_format, "date": "$fecha_parsed"}},
+            "total_ventas": {"$sum": "$total"},
+            "total_costo": {"$sum": "$total_costo"},
+            "utilidad": {"$sum": "$utilidad"},
+            "cantidad": {"$sum": 1}
+        }},
+        {"$sort": {"_id": -1}},
+        {"$limit": limite}
+    ]
+    
+    ventas = list(ventas_col.aggregate(pipeline))
+    ventas.reverse()
+    
+    return {"data": [{"periodo": v["_id"], "ventas": v["total_ventas"], "costo": v["total_costo"], 
+                      "utilidad": v["utilidad"], "cantidad": v["cantidad"]} for v in ventas]}
+
+@app.get("/api/estadisticas/compras-por-periodo")
+def estadisticas_compras_periodo(request: Request, periodo: str = "mes", limite: int = 12):
+    user = get_current_user(request)
+    
+    if periodo == "dia":
+        group_format = "%Y-%m-%d"
+    elif periodo == "semana":
+        group_format = "%Y-W%V"
+    elif periodo == "año":
+        group_format = "%Y"
+    else:
+        group_format = "%Y-%m"
+    
+    pipeline = [
+        {"$addFields": {"fecha_parsed": {"$dateFromString": {"dateString": "$fecha", "onError": None}}}},
+        {"$match": {"fecha_parsed": {"$ne": None}}},
+        {"$group": {
+            "_id": {"$dateToString": {"format": group_format, "date": "$fecha_parsed"}},
+            "total": {"$sum": "$total"},
+            "cantidad": {"$sum": 1}
+        }},
+        {"$sort": {"_id": -1}},
+        {"$limit": limite}
+    ]
+    
+    compras = list(compras_col.aggregate(pipeline))
+    compras.reverse()
+    
+    return {"data": [{"periodo": c["_id"], "total": c["total"], "cantidad": c["cantidad"]} for c in compras]}
+
+@app.get("/api/estadisticas/productos-mas-vendidos")
+def estadisticas_productos_vendidos(request: Request, limite: int = 10):
+    user = get_current_user(request)
+    
+    pipeline = [
+        {"$unwind": "$items"},
+        {"$group": {
+            "_id": "$items.producto_id",
+            "codigo": {"$first": "$items.codigo"},
+            "nombre": {"$first": "$items.nombre"},
+            "cantidad": {"$sum": "$items.cantidad"},
+            "total": {"$sum": {"$multiply": ["$items.cantidad", "$items.precio_unitario"]}},
+            "utilidad": {"$sum": {"$multiply": ["$items.cantidad", {"$subtract": ["$items.precio_unitario", "$items.costo_unitario"]}]}}
+        }},
+        {"$sort": {"cantidad": -1}},
+        {"$limit": limite}
+    ]
+    
+    productos = list(ventas_col.aggregate(pipeline))
+    return {"data": productos}
+
+@app.get("/api/estadisticas/ventas-por-cliente")
+def estadisticas_ventas_cliente(request: Request, limite: int = 10):
+    user = get_current_user(request)
+    
+    pipeline = [
+        {"$group": {
+            "_id": "$cliente_id",
+            "nombre": {"$first": "$cliente_nombre"},
+            "total_compras": {"$sum": "$total"},
+            "utilidad": {"$sum": "$utilidad"},
+            "cantidad_compras": {"$sum": 1}
+        }},
+        {"$sort": {"total_compras": -1}},
+        {"$limit": limite}
+    ]
+    
+    clientes = list(ventas_col.aggregate(pipeline))
+    return {"data": clientes}
+
+@app.get("/api/estadisticas/compras-por-proveedor")
+def estadisticas_compras_proveedor(request: Request, limite: int = 10):
+    user = get_current_user(request)
+    
+    pipeline = [
+        {"$group": {
+            "_id": "$proveedor_id",
+            "nombre": {"$first": "$proveedor_nombre"},
+            "total": {"$sum": "$total"},
+            "cantidad": {"$sum": 1}
+        }},
+        {"$sort": {"total": -1}},
+        {"$limit": limite}
+    ]
+    
+    proveedores = list(compras_col.aggregate(pipeline))
+    return {"data": proveedores}
+
+@app.get("/api/estadisticas/stock-por-categoria")
+def estadisticas_stock_categoria(request: Request):
+    user = get_current_user(request)
+    
+    pipeline = [
+        {"$match": {"activo": True}},
+        {"$group": {
+            "_id": "$categoria",
+            "cantidad_productos": {"$sum": 1},
+            "stock_total": {"$sum": "$stock"},
+            "valor_costo": {"$sum": {"$multiply": ["$stock", "$costo"]}},
+            "valor_venta": {"$sum": {"$multiply": ["$stock", "$precio_con_iva"]}}
+        }},
+        {"$sort": {"valor_venta": -1}},
+        {"$limit": 15}
+    ]
+    
+    categorias = list(productos_col.aggregate(pipeline))
+    return {"data": [{"categoria": c["_id"], "productos": c["cantidad_productos"], 
+                      "stock": c["stock_total"], "valor_costo": c["valor_costo"],
+                      "valor_venta": c["valor_venta"]} for c in categorias]}
+
+@app.get("/api/estadisticas/gastos-por-categoria")
+def estadisticas_gastos_categoria(request: Request):
+    user = get_current_user(request)
+    
+    pipeline = [
+        {"$group": {
+            "_id": "$categoria",
+            "total": {"$sum": "$monto"},
+            "cantidad": {"$sum": 1}
+        }},
+        {"$sort": {"total": -1}}
+    ]
+    
+    gastos = list(gastos_col.aggregate(pipeline))
+    return {"data": [{"categoria": g["_id"], "total": g["total"], "cantidad": g["cantidad"]} for g in gastos]}
+
+@app.get("/api/estadisticas/resumen-general")
+def estadisticas_resumen(request: Request):
+    user = get_current_user(request)
+    
+    # Ventas
+    ventas_total = list(ventas_col.aggregate([
+        {"$group": {"_id": None, "total": {"$sum": "$total"}, "utilidad": {"$sum": "$utilidad"}, "cantidad": {"$sum": 1}}}
+    ]))
+    ventas_data = ventas_total[0] if ventas_total else {"total": 0, "utilidad": 0, "cantidad": 0}
+    
+    # Compras
+    compras_total = list(compras_col.aggregate([
+        {"$group": {"_id": None, "total": {"$sum": "$total"}, "cantidad": {"$sum": 1}}}
+    ]))
+    compras_data = compras_total[0] if compras_total else {"total": 0, "cantidad": 0}
+    
+    # Gastos
+    gastos_total = list(gastos_col.aggregate([
+        {"$group": {"_id": None, "total": {"$sum": "$monto"}, "cantidad": {"$sum": 1}}}
+    ]))
+    gastos_data = gastos_total[0] if gastos_total else {"total": 0, "cantidad": 0}
+    
+    # Stock
+    stock_total = list(productos_col.aggregate([
+        {"$match": {"activo": True}},
+        {"$group": {
+            "_id": None,
+            "productos": {"$sum": 1},
+            "stock_total": {"$sum": "$stock"},
+            "valor_costo": {"$sum": {"$multiply": ["$stock", "$costo"]}},
+            "valor_venta": {"$sum": {"$multiply": ["$stock", "$precio_con_iva"]}},
+            "sin_stock": {"$sum": {"$cond": [{"$lte": ["$stock", 0]}, 1, 0]}},
+            "bajo_minimo": {"$sum": {"$cond": [{"$lt": ["$stock", "$stock_minimo"]}, 1, 0]}}
+        }}
+    ]))
+    stock_data = stock_total[0] if stock_total else {"productos": 0, "stock_total": 0, "valor_costo": 0, "valor_venta": 0, "sin_stock": 0, "bajo_minimo": 0}
+    
+    utilidad_neta = ventas_data.get("utilidad", 0) - gastos_data.get("total", 0)
+    
+    return {
+        "ventas": {
+            "total": ventas_data.get("total", 0),
+            "utilidad": ventas_data.get("utilidad", 0),
+            "cantidad": ventas_data.get("cantidad", 0)
+        },
+        "compras": {
+            "total": compras_data.get("total", 0),
+            "cantidad": compras_data.get("cantidad", 0)
+        },
+        "gastos": {
+            "total": gastos_data.get("total", 0),
+            "cantidad": gastos_data.get("cantidad", 0)
+        },
+        "stock": {
+            "productos": stock_data.get("productos", 0),
+            "unidades": stock_data.get("stock_total", 0),
+            "valor_costo": stock_data.get("valor_costo", 0),
+            "valor_venta": stock_data.get("valor_venta", 0),
+            "sin_stock": stock_data.get("sin_stock", 0),
+            "bajo_minimo": stock_data.get("bajo_minimo", 0)
+        },
+        "utilidad_neta": utilidad_neta,
+        "clientes": clientes_col.count_documents({"activo": True}),
+        "proveedores": proveedores_col.count_documents({"activo": True})
+    }
+
 # ============ SEED DATA ============
 @app.post("/api/seed")
 def seed_database(request: Request):

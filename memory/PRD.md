@@ -1,69 +1,74 @@
 # PDS - Sistema de Gestión Integral para Insumos Odontológicos
 
 ## Problema Original
-Sistema completo de gestión comercial para empresa paraguaya (PDS) de distribución de insumos odontológicos. Incluye autenticación, roles, permisos, auditoría, control de stock, compras, ventas, clientes, proveedores, gastos y reportes.
+Sistema completo de gestión comercial para empresa paraguaya (PDS) de distribución de insumos odontológicos con dashboard gráfico, estadísticas personalizables, autenticación, roles, permisos, auditoría, reportes PDF/CSV.
 
 ## Arquitectura
-- **Frontend**: React 19 + Tailwind CSS + Phosphor Icons
+- **Frontend**: React 19 + Tailwind CSS + Recharts + Phosphor Icons + jsPDF
 - **Backend**: FastAPI (Python) con JWT Auth + bcrypt
 - **Base de datos**: MongoDB (pds_database)
 - **Puerto Apache**: 8004
 
 ## User Personas
-1. **Administrador (andy.escudero)**: Gestión total del sistema, usuarios, auditoría
-2. **Usuario Operativo**: Permisos modulares configurables por el admin
+1. **Administrador (andy.escudero/secreto)**: Gestión total, usuarios, auditoría
+2. **Usuario Operativo**: Permisos modulares configurables
 
-## Core Requirements
-- [x] Sistema de autenticación JWT
+## What's Been Implemented [2026-04-02]
+
+### Autenticación y Seguridad
+- [x] Login JWT con cookies httpOnly
 - [x] Roles (admin/usuario) con permisos modulares
-- [x] Dashboard con indicadores
-- [x] CRUD de productos con control de stock
-- [x] Ventas con cálculo de utilidad
-- [x] Compras con actualización de stock
-- [x] Clientes y proveedores
-- [x] Gastos operativos
+- [x] Protección contra fuerza bruta
+- [x] Auditoría de todas las acciones
+
+### Dashboard Gráfico
+- [x] Cards con indicadores principales (ventas, compras, utilidad, gastos)
+- [x] Gráfico de área: Ventas y Utilidad por período
+- [x] Gráfico de barras: Top 10 Productos Vendidos
+- [x] Gráfico de pie: Stock por Categoría
+- [x] Gráfico de barras: Top Clientes por Ventas
+- [x] Alertas de productos con bajo stock
+
+### Sección de Estadísticas (NUEVO)
+- [x] Selector de período: Día, Semana, Mes, Año
+- [x] Gráfico de área: Ventas y Utilidad por período
+- [x] Gráfico de barras: Compras por período
+- [x] Gráfico de barras horizontal: Top 15 Productos más vendidos
+- [x] Gráfico de pie: Ventas por Cliente
+- [x] Gráfico de barras: Stock por Categoría (valor costo y venta)
+- [x] Gráfico de pie/donut: Gastos por Categoría
+- [x] Gráfico de barras: Compras por Proveedor
+- [x] Botón Exportar PDF con gráficos
+
+### Reportes
+- [x] Exportación CSV (ventas, productos, movimientos stock)
+- [x] Exportación PDF (ventas, inventario, estadísticas)
+- [x] Filtros por rango de fechas
+
+### Gestión Operativa
+- [x] CRUD Productos (286 productos cargados)
+- [x] CRUD Clientes (7 clientes)
+- [x] CRUD Proveedores (7 proveedores)
+- [x] Registro de Ventas con cálculo de utilidad
+- [x] Registro de Compras con actualización de stock
+- [x] Registro de Gastos por categoría
 - [x] Historial de movimientos de stock
-- [x] Auditoría del sistema
-- [x] Reportes exportables (CSV)
-
-## What's Been Implemented
-**[2026-04-02]**
-- MVP inicial con 285 productos
-- Autenticación JWT + bcrypt
-- Sistema de roles y permisos modulares
-- Admin: andy.escudero / secreto
-- Auditoría de todas las acciones
-- Historial de movimientos de stock
-- Exportación de reportes a CSV
-- Ajuste manual de stock con motivo
-
-## Permisos Modulares
-| Módulo | Acciones |
-|--------|----------|
-| Dashboard | Ver |
-| Productos | Ver, Crear, Editar, Eliminar |
-| Ventas | Ver, Crear, Editar, Eliminar |
-| Compras | Ver, Crear, Editar, Eliminar |
-| Clientes | Ver, Crear, Editar, Eliminar |
-| Proveedores | Ver, Crear, Editar, Eliminar |
-| Gastos | Ver, Crear, Editar, Eliminar |
-| Reportes | Ver |
-| Auditoría | Ver (solo admin) |
-| Usuarios | Ver, Crear, Editar, Eliminar (solo admin) |
+- [x] Ajuste manual de stock con motivo
 
 ## Backlog
 
 ### P1 (Alta)
-- Exportación a PDF
-- Gráficos de tendencias en dashboard
-- Filtros avanzados en reportes
+- Gráficos de comparación año vs año
+- Dashboard personalizable (arrastrar widgets)
+- Alertas por email de bajo stock
 
 ### P2 (Media)
 - Recuperación de contraseña
-- Notificaciones de bajo stock
+- Notificaciones en tiempo real
 - Bancos/Tesorería
+- Cuentas por cobrar/pagar
 
 ## Next Tasks
-1. Agregar gráficos de ventas mensuales
-2. Implementar exportación a PDF
-3. Agregar filtros por fecha en todas las vistas
+1. Agregar comparativa de períodos anteriores
+2. Widgets personalizables en dashboard
+3. Notificaciones de stock bajo por email/WhatsApp
