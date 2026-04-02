@@ -38,6 +38,10 @@ const formatGsShort = (value) => {
   return value.toString();
 };
 const formatApiError = (d) => d == null ? "Error" : typeof d === "string" ? d : Array.isArray(d) ? d.map(e => e?.msg || JSON.stringify(e)).join(" ") : String(d);
+const hasPermission = (user, modulo, accion = 'ver') => {
+  if (user?.role === 'admin') return true;
+  return user?.permisos?.[modulo]?.[accion] === true;
+};
 
 const COLORS = ['#E63946', '#457B9D', '#2A9D8F', '#E9C46A', '#F4A261', '#264653', '#A8DADC', '#6D6875'];
 
@@ -159,7 +163,7 @@ function Sidebar({ activeView, setActiveView, user, onLogout, onNavigate }) {
 
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: House, visible: check('dashboard') },
-    { id: 'estadisticas', label: 'Estadísticas', icon: ChartLine, visible: check('reportes') },
+    { id: 'estadisticas', label: 'Estadísticas', icon: ChartLine, visible: check('estadisticas') },
     { id: 'productos', label: 'Productos', icon: Package, visible: check('productos') },
     { id: 'ventas', label: 'Ventas', icon: ShoppingCart, visible: check('ventas') },
     { id: 'compras', label: 'Compras', icon: Receipt, visible: check('compras') },
@@ -167,7 +171,7 @@ function Sidebar({ activeView, setActiveView, user, onLogout, onNavigate }) {
     { id: 'proveedores', label: 'Proveedores', icon: Truck, visible: check('proveedores') },
     { id: 'gastos', label: 'Gastos', icon: Money, visible: check('gastos') },
     { id: 'reportes', label: 'Reportes', icon: FileText, visible: check('reportes') },
-    { id: 'stock-historial', label: 'Historial Stock', icon: ClockCounterClockwise, visible: check('reportes') },
+    { id: 'stock-historial', label: 'Historial Stock', icon: ClockCounterClockwise, visible: check('stock_historial') },
   ];
   const adminItems = [
     { id: 'usuarios', label: 'Usuarios', icon: UserGear, visible: isAdmin },
@@ -1296,6 +1300,9 @@ function ProductosView({ user }) {
   const [form, setForm] = useState({ codigo: '', nombre: '', variante: '', categoria: '', proveedor: '', precio_con_iva: 0, costo: 0, stock: 0, stock_minimo: 2, iva_pct: 10, margen: 15 });
   const [ajusteForm, setAjusteForm] = useState({ cantidad: 0, motivo: '' });
   const isAdmin = user?.role === 'admin';
+  const canCreate = hasPermission(user, 'productos', 'crear');
+  const canEdit = hasPermission(user, 'productos', 'editar');
+  const canDelete = hasPermission(user, 'productos', 'eliminar');
 
   const loadData = useCallback(() => {
     setLoading(true);
@@ -1335,7 +1342,7 @@ function ProductosView({ user }) {
     <div className="space-y-6" data-testid="productos-view">
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-heading font-semibold">Productos</h2>
-        {isAdmin && <button onClick={openNew} className="flex items-center gap-2 px-4 py-2 bg-[#E63946] text-white rounded-lg hover:bg-[#D90429]" data-testid="add-producto-btn"><Plus size={18} /> Nuevo Producto</button>}
+        {canCreate && <button onClick={openNew} className="flex items-center gap-2 px-4 py-2 bg-[#E63946] text-white rounded-lg hover:bg-[#D90429]" data-testid="add-producto-btn"><Plus size={18} /> Nuevo Producto</button>}
       </div>
       <div className="relative max-w-md">
         <MagnifyingGlass size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
@@ -1344,7 +1351,7 @@ function ProductosView({ user }) {
       <div className="bg-white border border-border rounded-md overflow-hidden">
         <div className="overflow-x-auto max-h-[600px]">
           <table className="data-table">
-            <thead className="sticky top-0 bg-white"><tr><th>Código</th><th>Nombre</th><th>Categoría</th><th className="text-right">Costo</th><th className="text-right">Precio</th><th className="text-center">Stock</th>{isAdmin && <th className="text-center">Acciones</th>}</tr></thead>
+            <thead className="sticky top-0 bg-white"><tr><th>Código</th><th>Nombre</th><th>Categoría</th><th className="text-right">Costo</th><th className="text-right">Precio</th><th className="text-center">Stock</th>{(canEdit || canDelete) && <th className="text-center">Acciones</th>}</tr></thead>
             <tbody>
               {loading ? <tr><td colSpan={7} className="text-center py-8">Cargando...</td></tr>
               : productos.length === 0 ? <tr><td colSpan={7} className="text-center py-8">Sin productos</td></tr>
@@ -1356,11 +1363,11 @@ function ProductosView({ user }) {
                   <td className="text-right text-sm">{formatGs(p.costo)}</td>
                   <td className="text-right price-gs">{formatGs(p.precio_con_iva)}</td>
                   <td className="text-center"><span className={p.stock <= p.stock_minimo ? 'text-red-600 font-semibold' : 'text-green-600'}>{p.stock}</span></td>
-                  {isAdmin && <td className="text-center">
+                  {(canEdit || canDelete) && <td className="text-center">
                     <div className="flex items-center justify-center gap-1">
-                      <button onClick={() => { setShowAjusteModal(p); setAjusteForm({ cantidad: 0, motivo: '' }); }} className="p-1 hover:bg-blue-50 rounded text-blue-600" title="Ajustar stock"><Package size={16} /></button>
-                      <button onClick={() => openEdit(p)} className="p-1 hover:bg-yellow-50 rounded text-yellow-600" title="Editar"><Pencil size={16} /></button>
-                      <button onClick={() => handleDelete(p.id)} className="p-1 hover:bg-red-50 rounded text-red-600" title="Eliminar"><Trash size={16} /></button>
+                      {canEdit && <button onClick={() => { setShowAjusteModal(p); setAjusteForm({ cantidad: 0, motivo: '' }); }} className="p-1 hover:bg-blue-50 rounded text-blue-600" title="Ajustar stock"><Package size={16} /></button>}
+                      {canEdit && <button onClick={() => openEdit(p)} className="p-1 hover:bg-yellow-50 rounded text-yellow-600" title="Editar"><Pencil size={16} /></button>}
+                      {canDelete && <button onClick={() => handleDelete(p.id)} className="p-1 hover:bg-red-50 rounded text-red-600" title="Eliminar"><Trash size={16} /></button>}
                     </div>
                   </td>}
                 </tr>
@@ -1655,7 +1662,9 @@ function ClientesView({ user }) {
   const [showModal, setShowModal] = useState(false);
   const [editItem, setEditItem] = useState(null);
   const [form, setForm] = useState({ nombre: '', ruc: '', telefono: '', direccion: '', ciudad: '', tipo: 'Odontólogo' });
-  const isAdmin = user?.role === 'admin';
+  const canCreate = hasPermission(user, 'clientes', 'crear');
+  const canEdit = hasPermission(user, 'clientes', 'editar');
+  const canDelete = hasPermission(user, 'clientes', 'eliminar');
 
   const loadData = useCallback(() => { setLoading(true); api.getClientes({}).then(r => setClientes(r.data.clientes || [])).finally(() => setLoading(false)); }, []);
   useEffect(() => { loadData(); }, [loadData]);
@@ -1680,7 +1689,7 @@ function ClientesView({ user }) {
     <div className="space-y-6" data-testid="clientes-view">
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-heading font-semibold">Clientes</h2>
-        <button onClick={openNew} className="flex items-center gap-2 px-4 py-2 bg-[#E63946] text-white rounded-lg hover:bg-[#D90429]" data-testid="add-cliente-btn"><Plus size={18} /> Nuevo Cliente</button>
+        {canCreate && <button onClick={openNew} className="flex items-center gap-2 px-4 py-2 bg-[#E63946] text-white rounded-lg hover:bg-[#D90429]" data-testid="add-cliente-btn"><Plus size={18} /> Nuevo Cliente</button>}
       </div>
       <div className="relative max-w-md">
         <MagnifyingGlass size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
@@ -1688,13 +1697,13 @@ function ClientesView({ user }) {
       </div>
       <div className="bg-white border border-border rounded-md">
         <table className="data-table">
-          <thead><tr><th>Nombre</th><th>RUC</th><th>Teléfono</th><th>Ciudad</th><th>Tipo</th>{isAdmin && <th className="text-center">Acciones</th>}</tr></thead>
+          <thead><tr><th>Nombre</th><th>RUC</th><th>Teléfono</th><th>Ciudad</th><th>Tipo</th>{(canEdit || canDelete) && <th className="text-center">Acciones</th>}</tr></thead>
           <tbody>
             {loading ? <tr><td colSpan={6} className="text-center py-8">Cargando...</td></tr>
             : clientes.length === 0 ? <tr><td colSpan={6} className="text-center py-8">Sin clientes</td></tr>
             : clientes.filter(c => !search || c.nombre?.toLowerCase().includes(search.toLowerCase()) || c.ruc?.includes(search) || c.ciudad?.toLowerCase().includes(search.toLowerCase())).map(c => (
               <tr key={c.id}><td className="font-medium">{c.nombre}</td><td>{c.ruc || '-'}</td><td>{c.telefono || '-'}</td><td>{c.ciudad || '-'}</td><td><span className="badge bg-blue-100 text-blue-800">{c.tipo}</span></td>
-              {isAdmin && <td className="text-center"><div className="flex items-center justify-center gap-1"><button onClick={() => openEdit(c)} className="p-1 hover:bg-yellow-50 rounded text-yellow-600"><Pencil size={16} /></button><button onClick={() => handleDelete(c.id)} className="p-1 hover:bg-red-50 rounded text-red-600"><Trash size={16} /></button></div></td>}</tr>
+              {(canEdit || canDelete) && <td className="text-center"><div className="flex items-center justify-center gap-1">{canEdit && <button onClick={() => openEdit(c)} className="p-1 hover:bg-yellow-50 rounded text-yellow-600"><Pencil size={16} /></button>}{canDelete && <button onClick={() => handleDelete(c.id)} className="p-1 hover:bg-red-50 rounded text-red-600"><Trash size={16} /></button>}</div></td>}</tr>
             ))}
           </tbody>
         </table>
@@ -1729,7 +1738,9 @@ function ProveedoresView({ user }) {
   const [showModal, setShowModal] = useState(false);
   const [editItem, setEditItem] = useState(null);
   const [form, setForm] = useState({ nombre: '', ruc: '', direccion: '', contacto: '', telefono: '' });
-  const isAdmin = user?.role === 'admin';
+  const canCreate = hasPermission(user, 'proveedores', 'crear');
+  const canEdit = hasPermission(user, 'proveedores', 'editar');
+  const canDelete = hasPermission(user, 'proveedores', 'eliminar');
 
   const loadData = useCallback(() => { setLoading(true); api.getProveedores({}).then(r => setProveedores(r.data.proveedores || [])).finally(() => setLoading(false)); }, []);
   useEffect(() => { loadData(); }, [loadData]);
@@ -1754,7 +1765,7 @@ function ProveedoresView({ user }) {
     <div className="space-y-6" data-testid="proveedores-view">
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-heading font-semibold">Proveedores</h2>
-        <button onClick={openNew} className="flex items-center gap-2 px-4 py-2 bg-[#E63946] text-white rounded-lg hover:bg-[#D90429]" data-testid="add-proveedor-btn"><Plus size={18} /> Nuevo Proveedor</button>
+        {canCreate && <button onClick={openNew} className="flex items-center gap-2 px-4 py-2 bg-[#E63946] text-white rounded-lg hover:bg-[#D90429]" data-testid="add-proveedor-btn"><Plus size={18} /> Nuevo Proveedor</button>}
       </div>
       <div className="relative max-w-md">
         <MagnifyingGlass size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
@@ -1762,13 +1773,13 @@ function ProveedoresView({ user }) {
       </div>
       <div className="bg-white border border-border rounded-md">
         <table className="data-table">
-          <thead><tr><th>Nombre</th><th>RUC</th><th>Contacto</th><th>Teléfono</th><th>Dirección</th>{isAdmin && <th className="text-center">Acciones</th>}</tr></thead>
+          <thead><tr><th>Nombre</th><th>RUC</th><th>Contacto</th><th>Teléfono</th><th>Dirección</th>{(canEdit || canDelete) && <th className="text-center">Acciones</th>}</tr></thead>
           <tbody>
             {loading ? <tr><td colSpan={6} className="text-center py-8">Cargando...</td></tr>
             : proveedores.length === 0 ? <tr><td colSpan={6} className="text-center py-8">Sin proveedores</td></tr>
             : proveedores.filter(p => !search || p.nombre?.toLowerCase().includes(search.toLowerCase()) || p.contacto?.toLowerCase().includes(search.toLowerCase())).map(p => (
               <tr key={p.id}><td className="font-medium">{p.nombre}</td><td>{p.ruc || '-'}</td><td>{p.contacto || '-'}</td><td>{p.telefono || '-'}</td><td className="text-sm">{p.direccion || '-'}</td>
-              {isAdmin && <td className="text-center"><div className="flex items-center justify-center gap-1"><button onClick={() => openEdit(p)} className="p-1 hover:bg-yellow-50 rounded text-yellow-600"><Pencil size={16} /></button><button onClick={() => handleDelete(p.id)} className="p-1 hover:bg-red-50 rounded text-red-600"><Trash size={16} /></button></div></td>}</tr>
+              {(canEdit || canDelete) && <td className="text-center"><div className="flex items-center justify-center gap-1">{canEdit && <button onClick={() => openEdit(p)} className="p-1 hover:bg-yellow-50 rounded text-yellow-600"><Pencil size={16} /></button>}{canDelete && <button onClick={() => handleDelete(p.id)} className="p-1 hover:bg-red-50 rounded text-red-600"><Trash size={16} /></button>}</div></td>}</tr>
             ))}
           </tbody>
         </table>
@@ -1856,19 +1867,126 @@ function GastosView({ user }) {
 }
 
 // ==================== USUARIOS VIEW ====================
+const MODULOS_CONFIG = [
+  { key: 'dashboard', label: 'Dashboard', acciones: ['ver'] },
+  { key: 'estadisticas', label: 'Estadísticas', acciones: ['ver'] },
+  { key: 'productos', label: 'Productos', acciones: ['ver', 'crear', 'editar', 'eliminar'] },
+  { key: 'ventas', label: 'Ventas', acciones: ['ver', 'crear'] },
+  { key: 'compras', label: 'Compras', acciones: ['ver', 'crear'] },
+  { key: 'clientes', label: 'Clientes', acciones: ['ver', 'crear', 'editar', 'eliminar'] },
+  { key: 'proveedores', label: 'Proveedores', acciones: ['ver', 'crear', 'editar', 'eliminar'] },
+  { key: 'gastos', label: 'Gastos', acciones: ['ver', 'crear'] },
+  { key: 'reportes', label: 'Reportes', acciones: ['ver'] },
+  { key: 'stock_historial', label: 'Historial Stock', acciones: ['ver'] },
+  { key: 'auditoria', label: 'Auditoría', acciones: ['ver'] },
+  { key: 'usuarios', label: 'Usuarios', acciones: ['ver', 'crear', 'editar', 'eliminar'] },
+];
+
+const ACCION_LABELS = { ver: 'Ver', crear: 'Crear', editar: 'Editar', eliminar: 'Eliminar' };
+
+function PermisosEditor({ permisos, onChange, disabled }) {
+  const togglePermiso = (modulo, accion) => {
+    if (disabled) return;
+    const newPermisos = { ...permisos };
+    if (!newPermisos[modulo]) newPermisos[modulo] = {};
+    newPermisos[modulo] = { ...newPermisos[modulo], [accion]: !newPermisos[modulo][accion] };
+    // If disabling 'ver', disable all other actions
+    if (accion === 'ver' && !newPermisos[modulo][accion]) {
+      Object.keys(newPermisos[modulo]).forEach(a => { if (a !== 'ver') newPermisos[modulo][a] = false; });
+    }
+    // If enabling any action, enable 'ver' too
+    if (accion !== 'ver' && newPermisos[modulo][accion]) {
+      newPermisos[modulo].ver = true;
+    }
+    onChange(newPermisos);
+  };
+
+  const toggleAll = (modulo, enable) => {
+    if (disabled) return;
+    const mod = MODULOS_CONFIG.find(m => m.key === modulo);
+    const newPermisos = { ...permisos };
+    newPermisos[modulo] = {};
+    mod.acciones.forEach(a => { newPermisos[modulo][a] = enable; });
+    onChange(newPermisos);
+  };
+
+  return (
+    <div className="border border-border rounded-lg overflow-hidden" data-testid="permisos-editor">
+      <table className="w-full text-sm">
+        <thead className="bg-muted">
+          <tr>
+            <th className="text-left px-3 py-2 font-semibold">Módulo</th>
+            {Object.entries(ACCION_LABELS).map(([k, v]) => (
+              <th key={k} className="text-center px-2 py-2 font-semibold w-20">{v}</th>
+            ))}
+            <th className="text-center px-2 py-2 w-16">Todo</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-border">
+          {MODULOS_CONFIG.map(mod => {
+            const modPermisos = permisos?.[mod.key] || {};
+            const allEnabled = mod.acciones.every(a => modPermisos[a]);
+            return (
+              <tr key={mod.key} className="hover:bg-muted/30">
+                <td className="px-3 py-2 font-medium">{mod.label}</td>
+                {Object.keys(ACCION_LABELS).map(accion => (
+                  <td key={accion} className="text-center px-2 py-2">
+                    {mod.acciones.includes(accion) ? (
+                      <input
+                        type="checkbox"
+                        checked={!!modPermisos[accion]}
+                        onChange={() => togglePermiso(mod.key, accion)}
+                        disabled={disabled}
+                        className="w-4 h-4 accent-[#E63946] cursor-pointer"
+                        data-testid={`perm-${mod.key}-${accion}`}
+                      />
+                    ) : <span className="text-muted-foreground">-</span>}
+                  </td>
+                ))}
+                <td className="text-center px-2 py-2">
+                  <input
+                    type="checkbox"
+                    checked={allEnabled}
+                    onChange={() => toggleAll(mod.key, !allEnabled)}
+                    disabled={disabled}
+                    className="w-4 h-4 accent-[#457B9D] cursor-pointer"
+                  />
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function UsuariosView() {
   const [usuarios, setUsuarios] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
   const [showModal, setShowModal] = useState(false);
-  const [form, setForm] = useState({ email: '', password: '', nombre: '', role: 'usuario' });
+  const [showPermisosModal, setShowPermisosModal] = useState(null);
+  const [editPermisos, setEditPermisos] = useState({});
+  const [form, setForm] = useState({ email: '', password: '', nombre: '', role: 'usuario', permisos: {} });
+
+  const getDefaultPermisos = () => {
+    const p = {};
+    MODULOS_CONFIG.forEach(m => { p[m.key] = {}; m.acciones.forEach(a => { p[m.key][a] = a === 'ver'; }); });
+    return p;
+  };
 
   const loadData = useCallback(() => { setLoading(true); api.getUsuarios().then(r => setUsuarios(r.data.usuarios || [])).finally(() => setLoading(false)); }, []);
   useEffect(() => { loadData(); }, [loadData]);
 
   const handleSave = async () => {
     if (!form.email || !form.password || !form.nombre) return alert('Complete todos los campos');
-    try { await api.createUsuario(form); setShowModal(false); loadData(); }
-    catch (e) { alert(formatApiError(e.response?.data?.detail)); }
+    try {
+      const payload = { ...form };
+      if (payload.role === 'admin') payload.permisos = {};
+      await api.createUsuario(payload);
+      setShowModal(false); loadData();
+    } catch (e) { alert(formatApiError(e.response?.data?.detail)); }
   };
 
   const handleDelete = async (id) => {
@@ -1881,24 +1999,58 @@ function UsuariosView() {
     catch (e) { alert(formatApiError(e.response?.data?.detail)); }
   };
 
+  const openPermisos = (u) => {
+    setEditPermisos(u.permisos && Object.keys(u.permisos).length > 0 ? JSON.parse(JSON.stringify(u.permisos)) : getDefaultPermisos());
+    setShowPermisosModal(u);
+  };
+
+  const savePermisos = async () => {
+    try {
+      await api.updateUsuario(showPermisosModal.id, { permisos: editPermisos });
+      setShowPermisosModal(null);
+      loadData();
+    } catch (e) { alert(formatApiError(e.response?.data?.detail)); }
+  };
+
+  const countPermisos = (permisos) => {
+    if (!permisos || Object.keys(permisos).length === 0) return '0';
+    let count = 0;
+    Object.values(permisos).forEach(mod => { Object.values(mod).forEach(v => { if (v) count++; }); });
+    return count;
+  };
+
   return (
     <div className="space-y-6" data-testid="usuarios-view">
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-heading font-semibold">Usuarios</h2>
-        <button onClick={() => { setForm({ email: '', password: '', nombre: '', role: 'usuario' }); setShowModal(true); }} className="flex items-center gap-2 px-4 py-2 bg-[#E63946] text-white rounded-lg hover:bg-[#D90429]" data-testid="add-usuario-btn"><Plus size={18} /> Nuevo Usuario</button>
+        <button onClick={() => { setForm({ email: '', password: '', nombre: '', role: 'usuario', permisos: getDefaultPermisos() }); setShowModal(true); }} className="flex items-center gap-2 px-4 py-2 bg-[#E63946] text-white rounded-lg hover:bg-[#D90429]" data-testid="add-usuario-btn"><Plus size={18} /> Nuevo Usuario</button>
+      </div>
+      <div className="relative max-w-md">
+        <MagnifyingGlass size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+        <input type="text" placeholder="Buscar por usuario, nombre..." value={search} onChange={(e) => setSearch(e.target.value)} className="form-input pl-10" data-testid="usuarios-search" />
       </div>
       <div className="bg-white border border-border rounded-md">
         <table className="data-table">
-          <thead><tr><th>Usuario</th><th>Nombre</th><th>Rol</th><th>Estado</th><th className="text-center">Acciones</th></tr></thead>
+          <thead><tr><th>Usuario</th><th>Nombre</th><th>Rol</th><th className="text-center">Permisos</th><th>Estado</th><th className="text-center">Acciones</th></tr></thead>
           <tbody>
-            {loading ? <tr><td colSpan={5} className="text-center py-8">Cargando...</td></tr>
-            : usuarios.map(u => (
+            {loading ? <tr><td colSpan={6} className="text-center py-8">Cargando...</td></tr>
+            : usuarios.filter(u => !search || u.email?.toLowerCase().includes(search.toLowerCase()) || u.nombre?.toLowerCase().includes(search.toLowerCase())).map(u => (
               <tr key={u.id}>
-                <td className="font-medium">{u.email}</td><td>{u.nombre || '-'}</td>
-                <td><span className={`badge ${u.role === 'admin' ? 'bg-purple-100 text-purple-800' : 'bg-blue-100 text-blue-800'}`}>{u.role}</span></td>
+                <td className="font-medium">{u.email}</td>
+                <td>{u.nombre || '-'}</td>
+                <td><span className={`badge ${u.role === 'admin' ? 'bg-purple-100 text-purple-800' : 'bg-blue-100 text-blue-800'}`}>{u.role === 'admin' ? 'Administrador' : 'Usuario'}</span></td>
+                <td className="text-center">
+                  {u.role === 'admin'
+                    ? <span className="text-xs text-muted-foreground">Acceso total</span>
+                    : <button onClick={() => openPermisos(u)} className="text-xs px-2 py-1 bg-blue-50 text-blue-700 rounded hover:bg-blue-100" data-testid={`edit-permisos-${u.id}`}>
+                        {countPermisos(u.permisos)} permisos
+                      </button>
+                  }
+                </td>
                 <td><span className={`badge ${u.activo !== false ? 'badge-success' : 'badge-danger'}`}>{u.activo !== false ? 'Activo' : 'Inactivo'}</span></td>
                 <td className="text-center">
                   <div className="flex items-center justify-center gap-1">
+                    {u.role !== 'admin' && <button onClick={() => openPermisos(u)} className="p-1 hover:bg-blue-50 rounded text-blue-600" title="Editar permisos"><ShieldCheck size={16} /></button>}
                     <button onClick={() => toggleActive(u)} className={`p-1 rounded ${u.activo !== false ? 'hover:bg-yellow-50 text-yellow-600' : 'hover:bg-green-50 text-green-600'}`} title={u.activo !== false ? 'Desactivar' : 'Activar'}>{u.activo !== false ? <Lock size={16} /> : <Check size={16} />}</button>
                     <button onClick={() => handleDelete(u.id)} className="p-1 hover:bg-red-50 rounded text-red-600" title="Eliminar"><Trash size={16} /></button>
                   </div>
@@ -1908,17 +2060,44 @@ function UsuariosView() {
           </tbody>
         </table>
       </div>
-      <Modal isOpen={showModal} onClose={() => setShowModal(false)} title="Nuevo Usuario" size="md">
+
+      {/* Crear usuario */}
+      <Modal isOpen={showModal} onClose={() => setShowModal(false)} title="Nuevo Usuario" size="xl">
         <div className="space-y-4">
-          <div className="form-group"><label className="form-label">Email/Usuario *</label><input type="text" value={form.email} onChange={(e) => setForm({...form, email: e.target.value})} className="form-input" data-testid="usuario-email" /></div>
-          <div className="form-group"><label className="form-label">Nombre *</label><input type="text" value={form.nombre} onChange={(e) => setForm({...form, nombre: e.target.value})} className="form-input" data-testid="usuario-nombre" /></div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="form-group"><label className="form-label">Email/Usuario *</label><input type="text" value={form.email} onChange={(e) => setForm({...form, email: e.target.value})} className="form-input" data-testid="usuario-email" /></div>
+            <div className="form-group"><label className="form-label">Nombre *</label><input type="text" value={form.nombre} onChange={(e) => setForm({...form, nombre: e.target.value})} className="form-input" data-testid="usuario-nombre" /></div>
+          </div>
           <div className="grid grid-cols-2 gap-4">
             <div className="form-group"><label className="form-label">Contraseña *</label><input type="password" value={form.password} onChange={(e) => setForm({...form, password: e.target.value})} className="form-input" data-testid="usuario-password" /></div>
             <div className="form-group"><label className="form-label">Rol</label><select value={form.role} onChange={(e) => setForm({...form, role: e.target.value})} className="form-input"><option value="usuario">Usuario</option><option value="admin">Administrador</option></select></div>
           </div>
+          {form.role === 'usuario' && (
+            <div>
+              <label className="form-label mb-2 block">Permisos por Módulo</label>
+              <PermisosEditor permisos={form.permisos} onChange={(p) => setForm({...form, permisos: p})} />
+            </div>
+          )}
+          {form.role === 'admin' && (
+            <div className="bg-purple-50 border border-purple-200 rounded-lg p-3 text-sm text-purple-700">
+              Los administradores tienen acceso completo a todos los módulos.
+            </div>
+          )}
           <div className="flex justify-end gap-3">
             <button onClick={() => setShowModal(false)} className="px-4 py-2 border border-border rounded-md hover:bg-muted">Cancelar</button>
             <button onClick={handleSave} className="bg-[#E63946] text-white px-4 py-2 rounded-md hover:bg-[#D90429]" data-testid="save-usuario-btn">Crear Usuario</button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Editar permisos */}
+      <Modal isOpen={!!showPermisosModal} onClose={() => setShowPermisosModal(null)} title={`Permisos: ${showPermisosModal?.nombre || showPermisosModal?.email || ''}`} size="xl">
+        <div className="space-y-4">
+          <p className="text-sm text-muted-foreground">Configura qué puede hacer este usuario en cada sección del sistema. Si desmarcas "Ver", se desactivan todas las acciones de ese módulo.</p>
+          <PermisosEditor permisos={editPermisos} onChange={setEditPermisos} />
+          <div className="flex justify-end gap-3">
+            <button onClick={() => setShowPermisosModal(null)} className="px-4 py-2 border border-border rounded-md hover:bg-muted">Cancelar</button>
+            <button onClick={savePermisos} className="bg-[#E63946] text-white px-4 py-2 rounded-md hover:bg-[#D90429]" data-testid="save-permisos-btn">Guardar Permisos</button>
           </div>
         </div>
       </Modal>

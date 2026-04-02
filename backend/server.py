@@ -453,6 +453,26 @@ def create_usuario(request: Request, data: UsuarioCreate):
     
     return {"id": str(result.inserted_id), "message": "Usuario creado"}
 
+MODULOS_PERMISOS = {
+    "dashboard": {"label": "Dashboard", "acciones": ["ver"]},
+    "estadisticas": {"label": "Estadísticas", "acciones": ["ver"]},
+    "productos": {"label": "Productos", "acciones": ["ver", "crear", "editar", "eliminar"]},
+    "ventas": {"label": "Ventas", "acciones": ["ver", "crear"]},
+    "compras": {"label": "Compras", "acciones": ["ver", "crear"]},
+    "clientes": {"label": "Clientes", "acciones": ["ver", "crear", "editar", "eliminar"]},
+    "proveedores": {"label": "Proveedores", "acciones": ["ver", "crear", "editar", "eliminar"]},
+    "gastos": {"label": "Gastos", "acciones": ["ver", "crear"]},
+    "reportes": {"label": "Reportes", "acciones": ["ver"]},
+    "stock_historial": {"label": "Historial Stock", "acciones": ["ver"]},
+    "auditoria": {"label": "Auditoría", "acciones": ["ver"]},
+    "usuarios": {"label": "Usuarios", "acciones": ["ver", "crear", "editar", "eliminar"]}
+}
+
+@app.get("/api/permisos/modulos")
+def get_modulos_permisos(request: Request):
+    require_admin(request)
+    return {"modulos": MODULOS_PERMISOS}
+
 @app.put("/api/usuarios/{usuario_id}")
 def update_usuario(request: Request, usuario_id: str, data: UsuarioUpdate):
     admin = require_admin(request)
