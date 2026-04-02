@@ -1,74 +1,62 @@
-# PDS - Sistema de Gestión Integral para Insumos Odontológicos
+# PDS - Sistema de Gestión de Insumos Odontológicos
 
 ## Problema Original
-Sistema completo de gestión comercial para empresa paraguaya (PDS) de distribución de insumos odontológicos con dashboard gráfico, estadísticas personalizables, autenticación, roles, permisos, auditoría, reportes PDF/CSV.
+Crear un sistema web de gestión de ventas e inventario para insumos odontológicos (Sistema PDS), con datos iniciales de ~285 productos provenientes de un archivo Excel proporcionado por el usuario.
 
-## Arquitectura
-- **Frontend**: React 19 + Tailwind CSS + Recharts + Phosphor Icons + jsPDF
-- **Backend**: FastAPI (Python) con JWT Auth + bcrypt
-- **Base de datos**: MongoDB (pds_database)
-- **Puerto Apache**: 8004
+## Usuarios
+- **Admin** (andy.escudero): Acceso completo a todos los módulos, gestión de usuarios, auditoría, definición de metas.
+- **Usuario**: Acceso restringido según permisos asignados por admin.
 
-## User Personas
-1. **Administrador (andy.escudero/secreto)**: Gestión total, usuarios, auditoría
-2. **Usuario Operativo**: Permisos modulares configurables
+## Stack Técnico
+- **Frontend**: React.js + TailwindCSS + Phosphor Icons + Recharts + react-grid-layout
+- **Backend**: FastAPI + PyMongo
+- **Base de datos**: MongoDB
+- **Auth**: JWT con cookies HttpOnly + bcrypt
 
-## What's Been Implemented [2026-04-02]
+## Requisitos Implementados
 
-### Autenticación y Seguridad
-- [x] Login JWT con cookies httpOnly
-- [x] Roles (admin/usuario) con permisos modulares
-- [x] Protección contra fuerza bruta
-- [x] Auditoría de todas las acciones
+### Fase 1 - MVP (COMPLETADO)
+- Carga de 285 productos desde Excel del usuario
+- CRUD de Productos, Clientes, Proveedores
+- Registro de Ventas, Compras, Gastos
+- Sidebar de navegación con todos los módulos
 
-### Dashboard Gráfico
-- [x] Cards con indicadores principales (ventas, compras, utilidad, gastos)
-- [x] Gráfico de área: Ventas y Utilidad por período
-- [x] Gráfico de barras: Top 10 Productos Vendidos
-- [x] Gráfico de pie: Stock por Categoría
-- [x] Gráfico de barras: Top Clientes por Ventas
-- [x] Alertas de productos con bajo stock
+### Fase 2 - Autenticación y Seguridad (COMPLETADO)
+- JWT Auth con cookies HttpOnly
+- Roles: Admin y Usuario con permisos granulares
+- Protección contra fuerza bruta (5 intentos, bloqueo 15 min)
+- Auditoría de todas las acciones
+- Historial de movimientos de stock
 
-### Sección de Estadísticas (NUEVO)
-- [x] Selector de período: Día, Semana, Mes, Año
-- [x] Gráfico de área: Ventas y Utilidad por período
-- [x] Gráfico de barras: Compras por período
-- [x] Gráfico de barras horizontal: Top 15 Productos más vendidos
-- [x] Gráfico de pie: Ventas por Cliente
-- [x] Gráfico de barras: Stock por Categoría (valor costo y venta)
-- [x] Gráfico de pie/donut: Gastos por Categoría
-- [x] Gráfico de barras: Compras por Proveedor
-- [x] Botón Exportar PDF con gráficos
+### Fase 3 - Estadísticas y Reportes (COMPLETADO)
+- Gráficos: Ventas por período, compras, productos más vendidos, clientes, stock por categoría, gastos
+- Resumen general con utilidad neta
+- Exportación CSV de ventas, inventario, movimientos de stock
 
-### Reportes
-- [x] Exportación CSV (ventas, productos, movimientos stock)
-- [x] Exportación PDF (ventas, inventario, estadísticas)
-- [x] Filtros por rango de fechas
+### Fase 4 - Dashboard Personalizable (COMPLETADO - Verificado 2026-04-02)
+- Grid drag-and-drop con react-grid-layout
+- 4 plantillas predefinidas: Ejecutivo, Ventas, Inventario, Analítico
+- 19 widgets disponibles: stat cards, gráficos, tablas, alertas, metas
+- Modo edición: arrastrar, redimensionar, agregar/eliminar widgets
+- Guardado de configuración por usuario en MongoDB
+- Widget de Metas de Ventas mensuales con barra de progreso
 
-### Gestión Operativa
-- [x] CRUD Productos (286 productos cargados)
-- [x] CRUD Clientes (7 clientes)
-- [x] CRUD Proveedores (7 proveedores)
-- [x] Registro de Ventas con cálculo de utilidad
-- [x] Registro de Compras con actualización de stock
-- [x] Registro de Gastos por categoría
-- [x] Historial de movimientos de stock
-- [x] Ajuste manual de stock con motivo
+## Endpoints API Principales
+- Auth: POST /api/auth/login, POST /api/auth/logout, GET /api/auth/me, POST /api/auth/refresh
+- Dashboard: GET /api/dashboard, GET /api/dashboard/config, POST /api/dashboard/config, GET /api/dashboard/templates
+- Metas: GET /api/metas, POST /api/metas, GET /api/metas/historial
+- CRUD: /api/productos, /api/clientes, /api/proveedores, /api/ventas, /api/compras, /api/gastos
+- Estadísticas: /api/estadisticas/ventas-por-periodo, compras-por-periodo, etc.
+- Admin: /api/usuarios, /api/auditoria, /api/stock-movimientos
+- Reportes: /api/reportes/ventas, /api/reportes/productos, /api/reportes/stock-movimientos
 
-## Backlog
+## Arquitectura de Archivos
+- `/app/backend/server.py` - Backend completo (1864 líneas)
+- `/app/frontend/src/App.js` - Frontend monolítico (862 líneas)
+- `/app/frontend/src/App.css` - Estilos
+- `/app/backend/tests/test_dashboard_metas.py` - Tests del dashboard
 
-### P1 (Alta)
-- Gráficos de comparación año vs año
-- Dashboard personalizable (arrastrar widgets)
-- Alertas por email de bajo stock
-
-### P2 (Media)
-- Recuperación de contraseña
-- Notificaciones en tiempo real
-- Bancos/Tesorería
-- Cuentas por cobrar/pagar
-
-## Next Tasks
-1. Agregar comparativa de períodos anteriores
-2. Widgets personalizables en dashboard
-3. Notificaciones de stock bajo por email/WhatsApp
+## Backlog / Tareas Futuras
+- **P1**: Refactorizar App.js en componentes más pequeños (Dashboard, Stats, etc.)
+- **P2**: Verificar exportación PDF con layouts personalizados del dashboard
+- **P2**: Agregar más opciones de exportación (Excel con formato)
