@@ -162,7 +162,7 @@ function Sidebar({ activeView, setActiveView, user, onLogout, onNavigate }) {
   const check = (m) => isAdmin || user?.permisos?.[m]?.ver;
 
   const navItems = [
-    { id: 'dashboard', label: 'Dashboard', icon: House, visible: check('dashboard') },
+    { id: 'dashboard', label: 'Dashboard', icon: House, visible: true },
     { id: 'estadisticas', label: 'Estadísticas', icon: ChartLine, visible: check('estadisticas') },
     { id: 'productos', label: 'Productos', icon: Package, visible: check('productos') },
     { id: 'ventas', label: 'Ventas', icon: ShoppingCart, visible: check('ventas') },
@@ -1868,7 +1868,7 @@ function GastosView({ user }) {
 
 // ==================== USUARIOS VIEW ====================
 const MODULOS_CONFIG = [
-  { key: 'dashboard', label: 'Dashboard', acciones: ['ver'] },
+  { key: 'dashboard', label: 'Dashboard', acciones: ['ver'], siempreVisible: true },
   { key: 'estadisticas', label: 'Estadísticas', acciones: ['ver'] },
   { key: 'productos', label: 'Productos', acciones: ['ver', 'crear', 'editar', 'eliminar'] },
   { key: 'ventas', label: 'Ventas', acciones: ['ver', 'crear'] },
@@ -1924,19 +1924,20 @@ function PermisosEditor({ permisos, onChange, disabled }) {
         </thead>
         <tbody className="divide-y divide-border">
           {MODULOS_CONFIG.map(mod => {
-            const modPermisos = permisos?.[mod.key] || {};
+            const isSiempreVisible = mod.siempreVisible;
+            const modPermisos = isSiempreVisible ? { ver: true } : (permisos?.[mod.key] || {});
             const allEnabled = mod.acciones.every(a => modPermisos[a]);
             return (
-              <tr key={mod.key} className="hover:bg-muted/30">
-                <td className="px-3 py-2 font-medium">{mod.label}</td>
+              <tr key={mod.key} className={`hover:bg-muted/30 ${isSiempreVisible ? 'opacity-60' : ''}`}>
+                <td className="px-3 py-2 font-medium">{mod.label}{isSiempreVisible ? ' (siempre)' : ''}</td>
                 {Object.keys(ACCION_LABELS).map(accion => (
                   <td key={accion} className="text-center px-2 py-2">
                     {mod.acciones.includes(accion) ? (
                       <input
                         type="checkbox"
-                        checked={!!modPermisos[accion]}
+                        checked={isSiempreVisible ? true : !!modPermisos[accion]}
                         onChange={() => togglePermiso(mod.key, accion)}
-                        disabled={disabled}
+                        disabled={disabled || isSiempreVisible}
                         className="w-4 h-4 accent-[#E63946] cursor-pointer"
                         data-testid={`perm-${mod.key}-${accion}`}
                       />
@@ -1946,9 +1947,9 @@ function PermisosEditor({ permisos, onChange, disabled }) {
                 <td className="text-center px-2 py-2">
                   <input
                     type="checkbox"
-                    checked={allEnabled}
+                    checked={isSiempreVisible ? true : allEnabled}
                     onChange={() => toggleAll(mod.key, !allEnabled)}
-                    disabled={disabled}
+                    disabled={disabled || isSiempreVisible}
                     className="w-4 h-4 accent-[#457B9D] cursor-pointer"
                   />
                 </td>
