@@ -6,15 +6,17 @@ import {
   MagnifyingGlass, Plus, Pencil, Trash, Warning, X, Check,
   SignOut, UserCircle, ShieldCheck, ClockCounterClockwise, FileText,
   Download, Lock, Eye, EyeSlash, UserGear, Gear, ChartLine, ChartBar,
-  ChartPie, FilePdf, CaretDown, Funnel, Calendar, TrendUp, TrendDown
+  ChartPie, FilePdf, TrendUp, TrendDown, Target, Sliders, FloppyDisk,
+  ArrowsOutCardinal, Layout, Rows, SquaresFour
 } from '@phosphor-icons/react';
 import {
   AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell, LineChart, Line,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
 } from 'recharts';
+import GridLayout from 'react-grid-layout';
+import 'react-grid-layout/css/styles.css';
 import jsPDF from 'jspdf';
-import autoTable from 'jspdf-autotable';
-import html2canvas from 'html2canvas';
+import 'jspdf-autotable';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL || '';
 axios.defaults.withCredentials = true;
@@ -22,12 +24,10 @@ axios.defaults.withCredentials = true;
 const AuthContext = createContext(null);
 export const useAuth = () => useContext(AuthContext);
 
-// Format Guaranies
 const formatGs = (value) => {
   if (!value && value !== 0) return 'Gs. 0';
   return 'Gs. ' + Math.round(value).toLocaleString('es-PY');
 };
-
 const formatGsShort = (value) => {
   if (!value) return '0';
   if (value >= 1000000000) return (value / 1000000000).toFixed(1) + 'B';
@@ -35,56 +35,53 @@ const formatGsShort = (value) => {
   if (value >= 1000) return (value / 1000).toFixed(0) + 'K';
   return value.toString();
 };
+const formatApiError = (d) => d == null ? "Error" : typeof d === "string" ? d : Array.isArray(d) ? d.map(e => e?.msg || JSON.stringify(e)).join(" ") : String(d);
 
-const formatApiError = (detail) => {
-  if (detail == null) return "Error desconocido";
-  if (typeof detail === "string") return detail;
-  if (Array.isArray(detail)) return detail.map(e => e?.msg || JSON.stringify(e)).join(" ");
-  return String(detail);
-};
-
-// Chart colors
 const COLORS = ['#E63946', '#457B9D', '#2A9D8F', '#E9C46A', '#F4A261', '#264653', '#A8DADC', '#6D6875'];
 
-// API
 const api = {
-  login: (data) => axios.post(`${API_URL}/api/auth/login`, data),
+  login: (d) => axios.post(`${API_URL}/api/auth/login`, d),
   logout: () => axios.post(`${API_URL}/api/auth/logout`),
   getMe: () => axios.get(`${API_URL}/api/auth/me`),
   getUsuarios: () => axios.get(`${API_URL}/api/usuarios`),
-  createUsuario: (data) => axios.post(`${API_URL}/api/usuarios`, data),
-  updateUsuario: (id, data) => axios.put(`${API_URL}/api/usuarios/${id}`, data),
-  changePassword: (id, data) => axios.put(`${API_URL}/api/usuarios/${id}/password`, data),
+  createUsuario: (d) => axios.post(`${API_URL}/api/usuarios`, d),
+  updateUsuario: (id, d) => axios.put(`${API_URL}/api/usuarios/${id}`, d),
+  changePassword: (id, d) => axios.put(`${API_URL}/api/usuarios/${id}/password`, d),
   deleteUsuario: (id) => axios.delete(`${API_URL}/api/usuarios/${id}`),
   getDashboard: () => axios.get(`${API_URL}/api/dashboard`),
-  getProductos: (params) => axios.get(`${API_URL}/api/productos`, { params }),
-  createProducto: (data) => axios.post(`${API_URL}/api/productos`, data),
-  updateProducto: (id, data) => axios.put(`${API_URL}/api/productos/${id}`, data),
+  getDashboardTemplates: () => axios.get(`${API_URL}/api/dashboard/templates`),
+  getDashboardConfig: () => axios.get(`${API_URL}/api/dashboard/config`),
+  saveDashboardConfig: (d) => axios.post(`${API_URL}/api/dashboard/config`, d),
+  getMetas: () => axios.get(`${API_URL}/api/metas`),
+  setMeta: (d) => axios.post(`${API_URL}/api/metas`, d),
+  getMetasHistorial: () => axios.get(`${API_URL}/api/metas/historial`),
+  getProductos: (p) => axios.get(`${API_URL}/api/productos`, { params: p }),
+  createProducto: (d) => axios.post(`${API_URL}/api/productos`, d),
+  updateProducto: (id, d) => axios.put(`${API_URL}/api/productos/${id}`, d),
   deleteProducto: (id) => axios.delete(`${API_URL}/api/productos/${id}`),
-  ajustarStock: (id, data) => axios.post(`${API_URL}/api/productos/${id}/ajuste-stock`, data),
+  ajustarStock: (id, d) => axios.post(`${API_URL}/api/productos/${id}/ajuste-stock`, d),
   getCategorias: () => axios.get(`${API_URL}/api/categorias`),
-  getClientes: (params) => axios.get(`${API_URL}/api/clientes`, { params }),
-  createCliente: (data) => axios.post(`${API_URL}/api/clientes`, data),
-  updateCliente: (id, data) => axios.put(`${API_URL}/api/clientes/${id}`, data),
+  getClientes: (p) => axios.get(`${API_URL}/api/clientes`, { params: p }),
+  createCliente: (d) => axios.post(`${API_URL}/api/clientes`, d),
+  updateCliente: (id, d) => axios.put(`${API_URL}/api/clientes/${id}`, d),
   deleteCliente: (id) => axios.delete(`${API_URL}/api/clientes/${id}`),
-  getProveedores: (params) => axios.get(`${API_URL}/api/proveedores`, { params }),
-  createProveedor: (data) => axios.post(`${API_URL}/api/proveedores`, data),
-  updateProveedor: (id, data) => axios.put(`${API_URL}/api/proveedores/${id}`, data),
+  getProveedores: (p) => axios.get(`${API_URL}/api/proveedores`, { params: p }),
+  createProveedor: (d) => axios.post(`${API_URL}/api/proveedores`, d),
+  updateProveedor: (id, d) => axios.put(`${API_URL}/api/proveedores/${id}`, d),
   deleteProveedor: (id) => axios.delete(`${API_URL}/api/proveedores/${id}`),
-  getVentas: (params) => axios.get(`${API_URL}/api/ventas`, { params }),
-  createVenta: (data) => axios.post(`${API_URL}/api/ventas`, data),
-  getCompras: (params) => axios.get(`${API_URL}/api/compras`, { params }),
-  createCompra: (data) => axios.post(`${API_URL}/api/compras`, data),
-  getGastos: (params) => axios.get(`${API_URL}/api/gastos`, { params }),
-  createGasto: (data) => axios.post(`${API_URL}/api/gastos`, data),
-  getAuditoria: (params) => axios.get(`${API_URL}/api/auditoria`, { params }),
-  getStockMovimientos: (params) => axios.get(`${API_URL}/api/stock-movimientos`, { params }),
-  // Estadísticas
-  getVentasPorPeriodo: (params) => axios.get(`${API_URL}/api/estadisticas/ventas-por-periodo`, { params }),
-  getComprasPorPeriodo: (params) => axios.get(`${API_URL}/api/estadisticas/compras-por-periodo`, { params }),
-  getProductosMasVendidos: (params) => axios.get(`${API_URL}/api/estadisticas/productos-mas-vendidos`, { params }),
-  getVentasPorCliente: (params) => axios.get(`${API_URL}/api/estadisticas/ventas-por-cliente`, { params }),
-  getComprasPorProveedor: (params) => axios.get(`${API_URL}/api/estadisticas/compras-por-proveedor`, { params }),
+  getVentas: (p) => axios.get(`${API_URL}/api/ventas`, { params: p }),
+  createVenta: (d) => axios.post(`${API_URL}/api/ventas`, d),
+  getCompras: (p) => axios.get(`${API_URL}/api/compras`, { params: p }),
+  createCompra: (d) => axios.post(`${API_URL}/api/compras`, d),
+  getGastos: (p) => axios.get(`${API_URL}/api/gastos`, { params: p }),
+  createGasto: (d) => axios.post(`${API_URL}/api/gastos`, d),
+  getAuditoria: (p) => axios.get(`${API_URL}/api/auditoria`, { params: p }),
+  getStockMovimientos: (p) => axios.get(`${API_URL}/api/stock-movimientos`, { params: p }),
+  getVentasPorPeriodo: (p) => axios.get(`${API_URL}/api/estadisticas/ventas-por-periodo`, { params: p }),
+  getComprasPorPeriodo: (p) => axios.get(`${API_URL}/api/estadisticas/compras-por-periodo`, { params: p }),
+  getProductosMasVendidos: (p) => axios.get(`${API_URL}/api/estadisticas/productos-mas-vendidos`, { params: p }),
+  getVentasPorCliente: (p) => axios.get(`${API_URL}/api/estadisticas/ventas-por-cliente`, { params: p }),
+  getComprasPorProveedor: (p) => axios.get(`${API_URL}/api/estadisticas/compras-por-proveedor`, { params: p }),
   getStockPorCategoria: () => axios.get(`${API_URL}/api/estadisticas/stock-por-categoria`),
   getGastosPorCategoria: () => axios.get(`${API_URL}/api/estadisticas/gastos-por-categoria`),
   getResumenGeneral: () => axios.get(`${API_URL}/api/estadisticas/resumen-general`),
@@ -102,12 +99,9 @@ function LoginPage({ onLogin }) {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError(''); setLoading(true);
-    try {
-      const { data } = await api.login({ email, password });
-      onLogin(data);
-    } catch (err) {
-      setError(formatApiError(err.response?.data?.detail) || 'Error de conexión');
-    } finally { setLoading(false); }
+    try { const { data } = await api.login({ email, password }); onLogin(data); }
+    catch (err) { setError(formatApiError(err.response?.data?.detail) || 'Error'); }
+    finally { setLoading(false); }
   };
 
   return (
@@ -118,28 +112,27 @@ function LoginPage({ onLogin }) {
             <span className="text-white font-heading font-bold text-3xl">pds</span>
           </div>
         </div>
-        <h1 className="text-2xl font-heading font-semibold text-center text-foreground mb-2">Bienvenido</h1>
+        <h1 className="text-2xl font-heading font-semibold text-center mb-2">Bienvenido</h1>
         <p className="text-center text-muted-foreground mb-8">Sistema de Gestión PDS</p>
         {error && <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-6 text-sm">{error}</div>}
         <form onSubmit={handleSubmit} className="space-y-5">
           <div className="form-group">
             <label className="form-label">Usuario</label>
-            <input type="text" value={email} onChange={(e) => setEmail(e.target.value)} className="form-input" placeholder="Ingrese su usuario" required data-testid="login-email" />
+            <input type="text" value={email} onChange={(e) => setEmail(e.target.value)} className="form-input" required data-testid="login-email" />
           </div>
           <div className="form-group">
             <label className="form-label">Contraseña</label>
             <div className="relative">
-              <input type={showPassword ? 'text' : 'password'} value={password} onChange={(e) => setPassword(e.target.value)} className="form-input pr-10" placeholder="Ingrese su contraseña" required data-testid="login-password" />
-              <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+              <input type={showPassword ? 'text' : 'password'} value={password} onChange={(e) => setPassword(e.target.value)} className="form-input pr-10" required data-testid="login-password" />
+              <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground">
                 {showPassword ? <EyeSlash size={18} /> : <Eye size={18} />}
               </button>
             </div>
           </div>
-          <button type="submit" disabled={loading} className="w-full bg-[#E63946] text-white py-3 rounded-lg font-medium hover:bg-[#D90429] transition-colors disabled:opacity-50" data-testid="login-submit">
+          <button type="submit" disabled={loading} className="w-full bg-[#E63946] text-white py-3 rounded-lg font-medium hover:bg-[#D90429] disabled:opacity-50" data-testid="login-submit">
             {loading ? 'Ingresando...' : 'Ingresar'}
           </button>
         </form>
-        <p className="text-center text-xs text-muted-foreground mt-8">PDS Insumos Odontológicos</p>
       </div>
     </div>
   );
@@ -148,21 +141,20 @@ function LoginPage({ onLogin }) {
 // Sidebar
 function Sidebar({ activeView, setActiveView, user, onLogout }) {
   const isAdmin = user?.role === 'admin';
-  const checkPermission = (modulo) => isAdmin || user?.permisos?.[modulo]?.ver;
+  const check = (m) => isAdmin || user?.permisos?.[m]?.ver;
 
   const navItems = [
-    { id: 'dashboard', label: 'Dashboard', icon: House, visible: checkPermission('dashboard') },
-    { id: 'estadisticas', label: 'Estadísticas', icon: ChartLine, visible: checkPermission('reportes') },
-    { id: 'productos', label: 'Productos', icon: Package, visible: checkPermission('productos') },
-    { id: 'ventas', label: 'Ventas', icon: ShoppingCart, visible: checkPermission('ventas') },
-    { id: 'compras', label: 'Compras', icon: Receipt, visible: checkPermission('compras') },
-    { id: 'clientes', label: 'Clientes', icon: Users, visible: checkPermission('clientes') },
-    { id: 'proveedores', label: 'Proveedores', icon: Truck, visible: checkPermission('proveedores') },
-    { id: 'gastos', label: 'Gastos', icon: Money, visible: checkPermission('gastos') },
-    { id: 'reportes', label: 'Reportes', icon: FileText, visible: checkPermission('reportes') },
-    { id: 'stock-historial', label: 'Historial Stock', icon: ClockCounterClockwise, visible: checkPermission('reportes') },
+    { id: 'dashboard', label: 'Dashboard', icon: House, visible: check('dashboard') },
+    { id: 'estadisticas', label: 'Estadísticas', icon: ChartLine, visible: check('reportes') },
+    { id: 'productos', label: 'Productos', icon: Package, visible: check('productos') },
+    { id: 'ventas', label: 'Ventas', icon: ShoppingCart, visible: check('ventas') },
+    { id: 'compras', label: 'Compras', icon: Receipt, visible: check('compras') },
+    { id: 'clientes', label: 'Clientes', icon: Users, visible: check('clientes') },
+    { id: 'proveedores', label: 'Proveedores', icon: Truck, visible: check('proveedores') },
+    { id: 'gastos', label: 'Gastos', icon: Money, visible: check('gastos') },
+    { id: 'reportes', label: 'Reportes', icon: FileText, visible: check('reportes') },
+    { id: 'stock-historial', label: 'Historial Stock', icon: ClockCounterClockwise, visible: check('reportes') },
   ];
-
   const adminItems = [
     { id: 'usuarios', label: 'Usuarios', icon: UserGear, visible: isAdmin },
     { id: 'auditoria', label: 'Auditoría', icon: ShieldCheck, visible: isAdmin },
@@ -175,10 +167,7 @@ function Sidebar({ activeView, setActiveView, user, onLogout }) {
           <div className="w-12 h-12 bg-[#E63946] rounded-lg flex items-center justify-center">
             <span className="text-white font-heading font-bold text-xl">pds</span>
           </div>
-          <div>
-            <h1 className="font-heading font-semibold text-foreground">PDS</h1>
-            <p className="text-xs text-muted-foreground">Gestión Integral</p>
-          </div>
+          <div><h1 className="font-heading font-semibold">PDS</h1><p className="text-xs text-muted-foreground">Gestión Integral</p></div>
         </div>
       </div>
       <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
@@ -191,9 +180,7 @@ function Sidebar({ activeView, setActiveView, user, onLogout }) {
         ))}
         {isAdmin && (
           <>
-            <div className="pt-4 pb-2">
-              <p className="px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Administración</p>
-            </div>
+            <div className="pt-4 pb-2"><p className="px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Admin</p></div>
             {adminItems.filter(i => i.visible).map((item) => (
               <button key={item.id} onClick={() => setActiveView(item.id)} data-testid={`nav-${item.id}`}
                 className={`nav-link w-full ${activeView === item.id ? 'active' : ''}`}>
@@ -206,15 +193,10 @@ function Sidebar({ activeView, setActiveView, user, onLogout }) {
       </nav>
       <div className="p-4 border-t border-border">
         <div className="flex items-center gap-3 mb-3">
-          <div className="w-10 h-10 bg-muted rounded-full flex items-center justify-center">
-            <UserCircle size={24} className="text-muted-foreground" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="font-medium text-sm truncate">{user?.nombre || user?.email}</p>
-            <p className="text-xs text-muted-foreground capitalize">{user?.role}</p>
-          </div>
+          <div className="w-10 h-10 bg-muted rounded-full flex items-center justify-center"><UserCircle size={24} className="text-muted-foreground" /></div>
+          <div className="flex-1 min-w-0"><p className="font-medium text-sm truncate">{user?.nombre || user?.email}</p><p className="text-xs text-muted-foreground capitalize">{user?.role}</p></div>
         </div>
-        <button onClick={onLogout} className="w-full flex items-center justify-center gap-2 px-4 py-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors" data-testid="logout-btn">
+        <button onClick={onLogout} className="w-full flex items-center justify-center gap-2 px-4 py-2 text-red-600 hover:bg-red-50 rounded-lg" data-testid="logout-btn">
           <SignOut size={18} /><span className="text-sm font-medium">Cerrar Sesión</span>
         </button>
       </div>
@@ -225,13 +207,13 @@ function Sidebar({ activeView, setActiveView, user, onLogout }) {
 // Modal
 function Modal({ isOpen, onClose, title, children, size = 'md' }) {
   if (!isOpen) return null;
-  const sizeClasses = { sm: 'max-w-sm', md: 'max-w-lg', lg: 'max-w-2xl', xl: 'max-w-4xl', '2xl': 'max-w-6xl' };
+  const sizes = { sm: 'max-w-sm', md: 'max-w-lg', lg: 'max-w-2xl', xl: 'max-w-4xl', '2xl': 'max-w-6xl' };
   return (
     <div className="modal-overlay flex items-center justify-center" onClick={onClose}>
-      <div className={`modal-content ${sizeClasses[size]}`} onClick={(e) => e.stopPropagation()}>
+      <div className={`modal-content ${sizes[size]}`} onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-4">
-          <h3 className="font-heading font-semibold text-lg text-foreground">{title}</h3>
-          <button onClick={onClose} className="p-1 hover:bg-muted rounded-md transition-colors"><X size={20} /></button>
+          <h3 className="font-heading font-semibold text-lg">{title}</h3>
+          <button onClick={onClose} className="p-1 hover:bg-muted rounded-md"><X size={20} /></button>
         </div>
         {children}
       </div>
@@ -239,742 +221,618 @@ function Modal({ isOpen, onClose, title, children, size = 'md' }) {
   );
 }
 
-// Stat Card with trend
-function StatCard({ label, value, icon: Icon, color = 'primary', trend, subtext }) {
-  const colorClasses = { primary: 'text-[#E63946]', success: 'text-green-600', warning: 'text-yellow-600', danger: 'text-red-600', blue: 'text-blue-600' };
-  return (
-    <div className="stat-card card-hover">
-      <div className="flex items-start justify-between">
-        <div>
-          <p className="stat-label">{label}</p>
-          <p className={`stat-value mt-2 ${colorClasses[color]}`}>{value}</p>
-          {subtext && <p className="text-xs text-muted-foreground mt-1">{subtext}</p>}
-        </div>
-        {Icon && <div className={`p-3 rounded-lg bg-muted ${colorClasses[color]}`}><Icon size={24} weight="duotone" /></div>}
-      </div>
-      {trend !== undefined && (
-        <div className={`flex items-center gap-1 mt-3 text-sm ${trend >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-          {trend >= 0 ? <TrendUp size={16} /> : <TrendDown size={16} />}
-          <span>{Math.abs(trend)}%</span>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// Custom Tooltip for charts
+// Custom Tooltip
 const CustomTooltip = ({ active, payload, label }) => {
-  if (active && payload && payload.length) {
+  if (active && payload?.length) {
     return (
       <div className="bg-white p-3 border border-border rounded-lg shadow-lg">
         <p className="font-medium text-sm mb-1">{label}</p>
-        {payload.map((entry, index) => (
-          <p key={index} className="text-sm" style={{ color: entry.color }}>
-            {entry.name}: {formatGs(entry.value)}
-          </p>
-        ))}
+        {payload.map((e, i) => (<p key={i} className="text-sm" style={{ color: e.color }}>{e.name}: {formatGs(e.value)}</p>))}
       </div>
     );
   }
   return null;
 };
 
-// Dashboard with Charts
-function Dashboard({ data, stats }) {
-  if (!data || !stats) return <div className="p-8 text-center text-muted-foreground">Cargando dashboard...</div>;
-
-  const { resumen, top_productos, top_clientes, bajo_stock } = data;
-
+// Widget Components
+function WidgetStatCard({ label, value, icon: Icon, color = 'primary', subtext }) {
+  const colors = { primary: 'text-[#E63946]', success: 'text-green-600', warning: 'text-yellow-600', danger: 'text-red-600', blue: 'text-blue-600' };
   return (
-    <div className="space-y-6 animate-fade-in" data-testid="dashboard-view">
-      <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-heading font-semibold text-foreground">Dashboard</h2>
-        <p className="text-sm text-muted-foreground">
-          {new Date().toLocaleDateString('es-PY', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
-        </p>
-      </div>
-
-      {/* Main Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard label="Total Ventas" value={formatGs(resumen.total_ventas)} icon={ShoppingCart} color="success" subtext={`${resumen.cantidad_ventas} operaciones`} />
-        <StatCard label="Total Compras" value={formatGs(resumen.total_compras)} icon={Receipt} color="primary" subtext={`${resumen.cantidad_compras} operaciones`} />
-        <StatCard label="Utilidad Bruta" value={formatGs(resumen.utilidad_bruta)} icon={TrendUp} color="success" />
-        <StatCard label="Total Gastos" value={formatGs(resumen.total_gastos)} icon={Money} color="warning" />
-      </div>
-
-      {/* Charts Row */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Ventas vs Compras Chart */}
-        {stats.ventasPeriodo && stats.ventasPeriodo.length > 0 && (
-          <div className="bg-white border border-border rounded-lg p-6">
-            <h3 className="font-heading font-semibold text-foreground mb-4">Ventas y Utilidad por Período</h3>
-            <ResponsiveContainer width="100%" height={280}>
-              <AreaChart data={stats.ventasPeriodo}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                <XAxis dataKey="periodo" tick={{ fontSize: 11 }} />
-                <YAxis tick={{ fontSize: 11 }} tickFormatter={formatGsShort} />
-                <Tooltip content={<CustomTooltip />} />
-                <Legend />
-                <Area type="monotone" dataKey="ventas" name="Ventas" stroke="#2A9D8F" fill="#2A9D8F" fillOpacity={0.3} />
-                <Area type="monotone" dataKey="utilidad" name="Utilidad" stroke="#E63946" fill="#E63946" fillOpacity={0.3} />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-        )}
-
-        {/* Top Productos Chart */}
-        {stats.productosMasVendidos && stats.productosMasVendidos.length > 0 && (
-          <div className="bg-white border border-border rounded-lg p-6">
-            <h3 className="font-heading font-semibold text-foreground mb-4">Top 10 Productos Vendidos</h3>
-            <ResponsiveContainer width="100%" height={280}>
-              <BarChart data={stats.productosMasVendidos.slice(0, 10)} layout="vertical">
-                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                <XAxis type="number" tick={{ fontSize: 11 }} tickFormatter={formatGsShort} />
-                <YAxis type="category" dataKey="nombre" width={120} tick={{ fontSize: 10 }} />
-                <Tooltip content={<CustomTooltip />} />
-                <Bar dataKey="total" name="Total Vendido" fill="#E63946" radius={[0, 4, 4, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        )}
-      </div>
-
-      {/* Secondary Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-        <div className="stat-card"><p className="stat-label">Productos</p><p className="stat-value text-foreground">{resumen.total_productos}</p></div>
-        <div className="stat-card"><p className="stat-label">Stock Valorizado</p><p className="stat-value text-foreground text-lg">{formatGs(resumen.valor_stock_venta)}</p></div>
-        <div className="stat-card"><p className="stat-label">Sin Stock</p><p className={`stat-value ${resumen.productos_sin_stock > 0 ? 'text-red-600' : 'text-green-600'}`}>{resumen.productos_sin_stock}</p></div>
-        <div className="stat-card"><p className="stat-label">Bajo Mínimo</p><p className={`stat-value ${resumen.productos_bajo_minimo > 0 ? 'text-yellow-600' : 'text-green-600'}`}>{resumen.productos_bajo_minimo}</p></div>
-        <div className="stat-card"><p className="stat-label">Clientes</p><p className="stat-value text-foreground">{resumen.total_clientes}</p></div>
-        <div className="stat-card"><p className="stat-label">Proveedores</p><p className="stat-value text-foreground">{resumen.total_proveedores}</p></div>
-      </div>
-
-      {/* More Charts */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Stock por Categoría */}
-        {stats.stockCategoria && stats.stockCategoria.length > 0 && (
-          <div className="bg-white border border-border rounded-lg p-6">
-            <h3 className="font-heading font-semibold text-foreground mb-4">Stock por Categoría (Top 10)</h3>
-            <ResponsiveContainer width="100%" height={280}>
-              <PieChart>
-                <Pie data={stats.stockCategoria.slice(0, 10)} dataKey="valor_venta" nameKey="categoria" cx="50%" cy="50%" outerRadius={100} label={({ categoria, percent }) => `${(percent * 100).toFixed(0)}%`}>
-                  {stats.stockCategoria.slice(0, 10).map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                  ))}
-                </Pie>
-                <Tooltip formatter={(value) => formatGs(value)} />
-                <Legend layout="vertical" align="right" verticalAlign="middle" wrapperStyle={{ fontSize: '11px' }} />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
-        )}
-
-        {/* Ventas por Cliente */}
-        {stats.ventasCliente && stats.ventasCliente.length > 0 && (
-          <div className="bg-white border border-border rounded-lg p-6">
-            <h3 className="font-heading font-semibold text-foreground mb-4">Top Clientes por Ventas</h3>
-            <ResponsiveContainer width="100%" height={280}>
-              <BarChart data={stats.ventasCliente.slice(0, 8)}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                <XAxis dataKey="nombre" tick={{ fontSize: 10 }} />
-                <YAxis tick={{ fontSize: 11 }} tickFormatter={formatGsShort} />
-                <Tooltip content={<CustomTooltip />} />
-                <Bar dataKey="total_compras" name="Total Compras" fill="#457B9D" radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        )}
-      </div>
-
-      {/* Tables */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-white border border-border rounded-md">
-          <div className="px-6 py-4 border-b border-border"><h3 className="font-heading font-semibold text-foreground">Top Productos Vendidos</h3></div>
-          <table className="data-table">
-            <thead><tr><th>Producto</th><th className="text-right">Cant.</th><th className="text-right">Total</th></tr></thead>
-            <tbody>
-              {top_productos?.length > 0 ? top_productos.map((p, i) => (
-                <tr key={i}><td className="font-medium">{p.nombre}</td><td className="text-right">{p.cantidad}</td><td className="text-right price-gs">{formatGs(p.total)}</td></tr>
-              )) : <tr><td colSpan={3} className="text-center text-muted-foreground py-8">Sin datos</td></tr>}
-            </tbody>
-          </table>
+    <div className="h-full flex flex-col justify-center p-4 bg-white rounded-lg border border-border">
+      <div className="flex items-start justify-between">
+        <div>
+          <p className="stat-label text-xs">{label}</p>
+          <p className={`text-xl font-semibold mt-1 ${colors[color]}`}>{value}</p>
+          {subtext && <p className="text-xs text-muted-foreground mt-1">{subtext}</p>}
         </div>
-        <div className="bg-white border border-border rounded-md">
-          <div className="px-6 py-4 border-b border-border"><h3 className="font-heading font-semibold text-foreground">Top Clientes</h3></div>
-          <table className="data-table">
-            <thead><tr><th>Cliente</th><th className="text-right">Compras</th><th className="text-right">Total</th></tr></thead>
-            <tbody>
-              {top_clientes?.length > 0 ? top_clientes.map((c, i) => (
-                <tr key={i}><td className="font-medium">{c.nombre}</td><td className="text-right">{c.cantidad_compras}</td><td className="text-right price-gs">{formatGs(c.total_compras)}</td></tr>
-              )) : <tr><td colSpan={3} className="text-center text-muted-foreground py-8">Sin datos</td></tr>}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* Low Stock Alert */}
-      {bajo_stock?.length > 0 && (
-        <div className="bg-yellow-50 border border-yellow-200 rounded-md p-4">
-          <div className="flex items-center gap-2 mb-3">
-            <Warning size={20} className="text-yellow-600" weight="fill" />
-            <h3 className="font-heading font-semibold text-yellow-800">Productos con Bajo Stock</h3>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-            {bajo_stock.map((p, i) => (
-              <div key={i} className="bg-white border border-yellow-200 rounded px-3 py-2">
-                <p className="text-sm font-medium text-foreground">{p.nombre}</p>
-                <p className="text-xs text-muted-foreground">{p.codigo} | Stock: <span className="text-red-600 font-semibold">{p.stock}</span> / Min: {p.stock_minimo}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// Estadísticas View
-function EstadisticasView() {
-  const [periodo, setPeriodo] = useState('mes');
-  const [ventasPeriodo, setVentasPeriodo] = useState([]);
-  const [comprasPeriodo, setComprasPeriodo] = useState([]);
-  const [productosMasVendidos, setProductosMasVendidos] = useState([]);
-  const [ventasCliente, setVentasCliente] = useState([]);
-  const [comprasProveedor, setComprasProveedor] = useState([]);
-  const [stockCategoria, setStockCategoria] = useState([]);
-  const [gastosCategoria, setGastosCategoria] = useState([]);
-  const [resumen, setResumen] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const chartRef = useRef(null);
-
-  const loadStats = useCallback(async () => {
-    setLoading(true);
-    try {
-      const [vp, cp, pmv, vc, cpr, sc, gc, res] = await Promise.all([
-        api.getVentasPorPeriodo({ periodo, limite: 12 }),
-        api.getComprasPorPeriodo({ periodo, limite: 12 }),
-        api.getProductosMasVendidos({ limite: 15 }),
-        api.getVentasPorCliente({ limite: 10 }),
-        api.getComprasPorProveedor({ limite: 10 }),
-        api.getStockPorCategoria(),
-        api.getGastosPorCategoria(),
-        api.getResumenGeneral()
-      ]);
-      setVentasPeriodo(vp.data.data || []);
-      setComprasPeriodo(cp.data.data || []);
-      setProductosMasVendidos(pmv.data.data || []);
-      setVentasCliente(vc.data.data || []);
-      setComprasProveedor(cpr.data.data || []);
-      setStockCategoria(sc.data.data || []);
-      setGastosCategoria(gc.data.data || []);
-      setResumen(res.data);
-    } catch (error) {
-      console.error('Error loading stats:', error);
-    } finally {
-      setLoading(false);
-    }
-  }, [periodo]);
-
-  useEffect(() => { loadStats(); }, [loadStats]);
-
-  const exportPDF = async () => {
-    const pdf = new jsPDF('l', 'mm', 'a4');
-    const pageWidth = pdf.internal.pageSize.getWidth();
-    
-    // Header
-    pdf.setFillColor(230, 57, 70);
-    pdf.rect(0, 0, pageWidth, 25, 'F');
-    pdf.setTextColor(255, 255, 255);
-    pdf.setFontSize(18);
-    pdf.text('PDS - Reporte de Estadísticas', 14, 17);
-    pdf.setFontSize(10);
-    pdf.text(new Date().toLocaleDateString('es-PY', { dateStyle: 'full' }), pageWidth - 14, 17, { align: 'right' });
-    
-    // Reset colors
-    pdf.setTextColor(0, 0, 0);
-    
-    // Resumen General
-    let y = 35;
-    pdf.setFontSize(14);
-    pdf.text('Resumen General', 14, y);
-    y += 8;
-    
-    if (resumen) {
-      autoTable(pdf, {
-        startY: y,
-        head: [['Concepto', 'Valor']],
-        body: [
-          ['Total Ventas', formatGs(resumen.ventas.total)],
-          ['Utilidad en Ventas', formatGs(resumen.ventas.utilidad)],
-          ['Total Compras', formatGs(resumen.compras.total)],
-          ['Total Gastos', formatGs(resumen.gastos.total)],
-          ['Utilidad Neta', formatGs(resumen.utilidad_neta)],
-          ['Valor Stock (Venta)', formatGs(resumen.stock.valor_venta)],
-          ['Productos Activos', resumen.stock.productos.toString()],
-        ],
-        theme: 'striped',
-        headStyles: { fillColor: [230, 57, 70] },
-        margin: { left: 14, right: pageWidth / 2 + 10 },
-        tableWidth: pageWidth / 2 - 20,
-      });
-    }
-    
-    // Top Productos
-    if (productosMasVendidos.length > 0) {
-      autoTable(pdf, {
-        startY: y,
-        head: [['Top Productos Vendidos', 'Cantidad', 'Total']],
-        body: productosMasVendidos.slice(0, 10).map(p => [p.nombre, p.cantidad, formatGs(p.total)]),
-        theme: 'striped',
-        headStyles: { fillColor: [69, 123, 157] },
-        margin: { left: pageWidth / 2 + 5, right: 14 },
-        tableWidth: pageWidth / 2 - 20,
-      });
-    }
-    
-    // Page 2 - Charts as images
-    pdf.addPage();
-    pdf.setFillColor(230, 57, 70);
-    pdf.rect(0, 0, pageWidth, 25, 'F');
-    pdf.setTextColor(255, 255, 255);
-    pdf.setFontSize(18);
-    pdf.text('PDS - Gráficos de Estadísticas', 14, 17);
-    
-    // Capture charts
-    if (chartRef.current) {
-      const canvas = await html2canvas(chartRef.current, { scale: 2 });
-      const imgData = canvas.toDataURL('image/png');
-      const imgWidth = pageWidth - 28;
-      const imgHeight = (canvas.height * imgWidth) / canvas.width;
-      pdf.addImage(imgData, 'PNG', 14, 35, imgWidth, Math.min(imgHeight, 160));
-    }
-    
-    pdf.save('pds_estadisticas.pdf');
-  };
-
-  if (loading) return <div className="p-8 text-center text-muted-foreground">Cargando estadísticas...</div>;
-
-  return (
-    <div className="space-y-6 animate-fade-in" data-testid="estadisticas-view">
-      <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-heading font-semibold text-foreground">Estadísticas</h2>
-        <div className="flex gap-3">
-          <select value={periodo} onChange={(e) => setPeriodo(e.target.value)} className="form-input w-40">
-            <option value="dia">Por Día</option>
-            <option value="semana">Por Semana</option>
-            <option value="mes">Por Mes</option>
-            <option value="año">Por Año</option>
-          </select>
-          <button onClick={exportPDF} className="flex items-center gap-2 bg-[#E63946] text-white px-4 py-2 rounded-md hover:bg-[#D90429]" data-testid="export-pdf">
-            <FilePdf size={20} /><span>Exportar PDF</span>
-          </button>
-        </div>
-      </div>
-
-      {/* Resumen Cards */}
-      {resumen && (
-        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
-          <StatCard label="Total Ventas" value={formatGs(resumen.ventas.total)} color="success" subtext={`${resumen.ventas.cantidad} ventas`} />
-          <StatCard label="Utilidad Ventas" value={formatGs(resumen.ventas.utilidad)} color="success" />
-          <StatCard label="Total Compras" value={formatGs(resumen.compras.total)} color="primary" subtext={`${resumen.compras.cantidad} compras`} />
-          <StatCard label="Total Gastos" value={formatGs(resumen.gastos.total)} color="warning" />
-          <StatCard label="Utilidad Neta" value={formatGs(resumen.utilidad_neta)} color={resumen.utilidad_neta >= 0 ? 'success' : 'danger'} />
-          <StatCard label="Valor Stock" value={formatGs(resumen.stock.valor_venta)} color="blue" subtext={`${resumen.stock.unidades} unidades`} />
-        </div>
-      )}
-
-      {/* Charts Grid */}
-      <div ref={chartRef} className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Ventas por Período */}
-        <div className="bg-white border border-border rounded-lg p-6">
-          <h3 className="font-heading font-semibold text-foreground mb-4">Ventas y Utilidad por {periodo}</h3>
-          <ResponsiveContainer width="100%" height={300}>
-            <AreaChart data={ventasPeriodo}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-              <XAxis dataKey="periodo" tick={{ fontSize: 10 }} />
-              <YAxis tick={{ fontSize: 10 }} tickFormatter={formatGsShort} />
-              <Tooltip content={<CustomTooltip />} />
-              <Legend />
-              <Area type="monotone" dataKey="ventas" name="Ventas" stroke="#2A9D8F" fill="#2A9D8F" fillOpacity={0.4} />
-              <Area type="monotone" dataKey="utilidad" name="Utilidad" stroke="#E63946" fill="#E63946" fillOpacity={0.4} />
-            </AreaChart>
-          </ResponsiveContainer>
-        </div>
-
-        {/* Compras por Período */}
-        <div className="bg-white border border-border rounded-lg p-6">
-          <h3 className="font-heading font-semibold text-foreground mb-4">Compras por {periodo}</h3>
-          <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={comprasPeriodo}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-              <XAxis dataKey="periodo" tick={{ fontSize: 10 }} />
-              <YAxis tick={{ fontSize: 10 }} tickFormatter={formatGsShort} />
-              <Tooltip content={<CustomTooltip />} />
-              <Bar dataKey="total" name="Total Compras" fill="#457B9D" radius={[4, 4, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-
-        {/* Top Productos */}
-        <div className="bg-white border border-border rounded-lg p-6">
-          <h3 className="font-heading font-semibold text-foreground mb-4">Top 15 Productos Más Vendidos</h3>
-          <ResponsiveContainer width="100%" height={400}>
-            <BarChart data={productosMasVendidos} layout="vertical">
-              <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-              <XAxis type="number" tick={{ fontSize: 10 }} tickFormatter={formatGsShort} />
-              <YAxis type="category" dataKey="nombre" width={150} tick={{ fontSize: 9 }} />
-              <Tooltip content={<CustomTooltip />} />
-              <Legend />
-              <Bar dataKey="total" name="Total Vendido" fill="#E63946" radius={[0, 4, 4, 0]} />
-              <Bar dataKey="utilidad" name="Utilidad" fill="#2A9D8F" radius={[0, 4, 4, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-
-        {/* Ventas por Cliente */}
-        <div className="bg-white border border-border rounded-lg p-6">
-          <h3 className="font-heading font-semibold text-foreground mb-4">Ventas por Cliente</h3>
-          <ResponsiveContainer width="100%" height={400}>
-            <PieChart>
-              <Pie data={ventasCliente} dataKey="total_compras" nameKey="nombre" cx="50%" cy="50%" outerRadius={120} label={({ name, percent }) => `${name.substring(0, 15)}... ${(percent * 100).toFixed(0)}%`} labelLine={false}>
-                {ventasCliente.map((entry, index) => (<Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />))}
-              </Pie>
-              <Tooltip formatter={(value) => formatGs(value)} />
-            </PieChart>
-          </ResponsiveContainer>
-        </div>
-
-        {/* Stock por Categoría */}
-        <div className="bg-white border border-border rounded-lg p-6">
-          <h3 className="font-heading font-semibold text-foreground mb-4">Valor de Stock por Categoría</h3>
-          <ResponsiveContainer width="100%" height={350}>
-            <BarChart data={stockCategoria.slice(0, 12)}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-              <XAxis dataKey="categoria" tick={{ fontSize: 9, angle: -45, textAnchor: 'end' }} height={80} />
-              <YAxis tick={{ fontSize: 10 }} tickFormatter={formatGsShort} />
-              <Tooltip content={<CustomTooltip />} />
-              <Legend />
-              <Bar dataKey="valor_venta" name="Valor Venta" fill="#264653" radius={[4, 4, 0, 0]} />
-              <Bar dataKey="valor_costo" name="Valor Costo" fill="#A8DADC" radius={[4, 4, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-
-        {/* Gastos por Categoría */}
-        <div className="bg-white border border-border rounded-lg p-6">
-          <h3 className="font-heading font-semibold text-foreground mb-4">Gastos por Categoría</h3>
-          <ResponsiveContainer width="100%" height={350}>
-            <PieChart>
-              <Pie data={gastosCategoria} dataKey="total" nameKey="categoria" cx="50%" cy="50%" innerRadius={60} outerRadius={100} label={({ categoria, percent }) => `${categoria} ${(percent * 100).toFixed(0)}%`}>
-                {gastosCategoria.map((entry, index) => (<Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />))}
-              </Pie>
-              <Tooltip formatter={(value) => formatGs(value)} />
-              <Legend layout="vertical" align="right" verticalAlign="middle" />
-            </PieChart>
-          </ResponsiveContainer>
-        </div>
-
-        {/* Compras por Proveedor */}
-        <div className="bg-white border border-border rounded-lg p-6 lg:col-span-2">
-          <h3 className="font-heading font-semibold text-foreground mb-4">Compras por Proveedor</h3>
-          <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={comprasProveedor}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-              <XAxis dataKey="nombre" tick={{ fontSize: 11 }} />
-              <YAxis tick={{ fontSize: 10 }} tickFormatter={formatGsShort} />
-              <Tooltip content={<CustomTooltip />} />
-              <Bar dataKey="total" name="Total Compras" fill="#F4A261" radius={[4, 4, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
+        {Icon && <div className={`p-2 rounded-lg bg-muted ${colors[color]}`}><Icon size={20} weight="duotone" /></div>}
       </div>
     </div>
   );
 }
 
-// Reportes View con PDF
-function ReportesView() {
-  const [fechaDesde, setFechaDesde] = useState('');
-  const [fechaHasta, setFechaHasta] = useState('');
-  const [exporting, setExporting] = useState(false);
-
-  const exportCSV = (tipo) => {
-    let url = `${API_URL}/api/reportes/${tipo}?formato=csv`;
-    if (fechaDesde) url += `&fecha_desde=${fechaDesde}`;
-    if (fechaHasta) url += `&fecha_hasta=${fechaHasta}`;
-    window.open(url, '_blank');
-  };
-
-  const exportVentasPDF = async () => {
-    setExporting(true);
-    try {
-      const params = {};
-      if (fechaDesde) params.fecha_desde = fechaDesde;
-      if (fechaHasta) params.fecha_hasta = fechaHasta;
-      
-      const res = await axios.get(`${API_URL}/api/reportes/ventas`, { params });
-      const { resumen, ventas } = res.data;
-      
-      const pdf = new jsPDF('l', 'mm', 'a4');
-      const pageWidth = pdf.internal.pageSize.getWidth();
-      
-      // Header
-      pdf.setFillColor(230, 57, 70);
-      pdf.rect(0, 0, pageWidth, 25, 'F');
-      pdf.setTextColor(255, 255, 255);
-      pdf.setFontSize(18);
-      pdf.text('PDS - Reporte de Ventas', 14, 17);
-      pdf.setFontSize(10);
-      const fechaStr = fechaDesde || fechaHasta ? `${fechaDesde || 'Inicio'} a ${fechaHasta || 'Hoy'}` : 'Todas las fechas';
-      pdf.text(fechaStr, pageWidth - 14, 17, { align: 'right' });
-      
-      pdf.setTextColor(0, 0, 0);
-      
-      // Resumen
-      let y = 35;
-      pdf.setFontSize(12);
-      pdf.text('Resumen', 14, y);
-      autoTable(pdf, {
-        startY: y + 5,
-        head: [['Total Ventas', 'Total Costo', 'Utilidad', 'Cantidad']],
-        body: [[formatGs(resumen.total_ventas), formatGs(resumen.total_costo), formatGs(resumen.total_utilidad), resumen.cantidad_ventas]],
-        theme: 'grid',
-        headStyles: { fillColor: [230, 57, 70] },
-      });
-      
-      // Detalle
-      autoTable(pdf, {
-        startY: pdf.lastAutoTable.finalY + 10,
-        head: [['Fecha', 'Cliente', 'Total', 'Costo', 'Utilidad', 'Vendedor']],
-        body: ventas.slice(0, 50).map(v => [
-          v.fecha?.substring(0, 10) || '',
-          v.cliente_nombre || '',
-          formatGs(v.total),
-          formatGs(v.total_costo),
-          formatGs(v.utilidad),
-          v.vendedor || ''
-        ]),
-        theme: 'striped',
-        headStyles: { fillColor: [69, 123, 157] },
-        styles: { fontSize: 9 },
-      });
-      
-      pdf.save('pds_reporte_ventas.pdf');
-    } catch (error) {
-      alert('Error al generar PDF');
-    } finally {
-      setExporting(false);
-    }
-  };
-
-  const exportProductosPDF = async () => {
-    setExporting(true);
-    try {
-      const res = await axios.get(`${API_URL}/api/reportes/productos`);
-      const { productos } = res.data;
-      
-      const pdf = new jsPDF('l', 'mm', 'a4');
-      const pageWidth = pdf.internal.pageSize.getWidth();
-      
-      pdf.setFillColor(230, 57, 70);
-      pdf.rect(0, 0, pageWidth, 25, 'F');
-      pdf.setTextColor(255, 255, 255);
-      pdf.setFontSize(18);
-      pdf.text('PDS - Reporte de Inventario', 14, 17);
-      pdf.setFontSize(10);
-      pdf.text(new Date().toLocaleDateString('es-PY'), pageWidth - 14, 17, { align: 'right' });
-      
-      pdf.setTextColor(0, 0, 0);
-      
-      autoTable(pdf, {
-        startY: 35,
-        head: [['Código', 'Nombre', 'Categoría', 'Proveedor', 'Stock', 'Costo', 'Precio', 'Valor Stock']],
-        body: productos.map(p => [
-          p.codigo,
-          p.nombre?.substring(0, 30),
-          p.categoria?.substring(0, 15),
-          p.proveedor?.substring(0, 15),
-          p.stock,
-          formatGs(p.costo),
-          formatGs(p.precio_con_iva),
-          formatGs(p.stock * p.precio_con_iva)
-        ]),
-        theme: 'striped',
-        headStyles: { fillColor: [69, 123, 157] },
-        styles: { fontSize: 8 },
-      });
-      
-      pdf.save('pds_inventario.pdf');
-    } catch (error) {
-      alert('Error al generar PDF');
-    } finally {
-      setExporting(false);
-    }
-  };
-
-  return (
-    <div className="space-y-6 animate-fade-in" data-testid="reportes-view">
-      <h2 className="text-2xl font-heading font-semibold text-foreground">Reportes</h2>
-
-      <div className="bg-white border border-border rounded-md p-6">
-        <h3 className="font-semibold mb-4">Filtros de Fecha</h3>
-        <div className="grid grid-cols-2 gap-4 max-w-md mb-6">
-          <div className="form-group">
-            <label className="form-label">Desde</label>
-            <input type="date" value={fechaDesde} onChange={(e) => setFechaDesde(e.target.value)} className="form-input" />
-          </div>
-          <div className="form-group">
-            <label className="form-label">Hasta</label>
-            <input type="date" value={fechaHasta} onChange={(e) => setFechaHasta(e.target.value)} className="form-input" />
-          </div>
-        </div>
-
-        <h3 className="font-semibold mb-4">Exportar Reportes</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <button onClick={() => exportCSV('ventas')} className="flex items-center gap-3 p-4 border border-border rounded-lg hover:bg-muted transition-colors">
-            <FileText size={24} className="text-green-600" />
-            <div className="text-left"><p className="font-medium">Ventas CSV</p><p className="text-xs text-muted-foreground">Excel compatible</p></div>
-          </button>
-          <button onClick={exportVentasPDF} disabled={exporting} className="flex items-center gap-3 p-4 border border-border rounded-lg hover:bg-muted transition-colors">
-            <FilePdf size={24} className="text-red-600" />
-            <div className="text-left"><p className="font-medium">Ventas PDF</p><p className="text-xs text-muted-foreground">Con resumen</p></div>
-          </button>
-          <button onClick={() => exportCSV('productos')} className="flex items-center gap-3 p-4 border border-border rounded-lg hover:bg-muted transition-colors">
-            <Package size={24} className="text-blue-600" />
-            <div className="text-left"><p className="font-medium">Inventario CSV</p><p className="text-xs text-muted-foreground">Productos</p></div>
-          </button>
-          <button onClick={exportProductosPDF} disabled={exporting} className="flex items-center gap-3 p-4 border border-border rounded-lg hover:bg-muted transition-colors">
-            <FilePdf size={24} className="text-red-600" />
-            <div className="text-left"><p className="font-medium">Inventario PDF</p><p className="text-xs text-muted-foreground">Completo</p></div>
-          </button>
-          <button onClick={() => exportCSV('stock-movimientos')} className="flex items-center gap-3 p-4 border border-border rounded-lg hover:bg-muted transition-colors">
-            <ClockCounterClockwise size={24} className="text-orange-600" />
-            <div className="text-left"><p className="font-medium">Movimientos Stock</p><p className="text-xs text-muted-foreground">Historial CSV</p></div>
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// Simplified views (keeping core functionality)
-function ProductosView({ user }) {
-  const [productos, setProductos] = useState([]);
-  const [categorias, setCategorias] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
-  const [categoriaFilter, setCategoriaFilter] = useState('');
+function WidgetMetas({ metas, isAdmin, onSetMeta }) {
   const [showModal, setShowModal] = useState(false);
-  const [editingProduct, setEditingProduct] = useState(null);
-  const [formData, setFormData] = useState({ codigo: '', nombre: '', variante: '', categoria: '', proveedor: '', precio_con_iva: 0, iva_pct: 10, costo: 0, stock: 0, stock_minimo: 2, margen: 15 });
+  const [metaVentas, setMetaVentas] = useState(metas?.meta_ventas || 0);
 
-  const canCreate = user?.role === 'admin' || user?.permisos?.productos?.crear;
-  const canEdit = user?.role === 'admin' || user?.permisos?.productos?.editar;
-  const canDelete = user?.role === 'admin' || user?.permisos?.productos?.eliminar;
-
-  const loadProductos = useCallback(async () => {
-    try { setLoading(true); const params = {}; if (search) params.search = search; if (categoriaFilter) params.categoria = categoriaFilter;
-      const [prodRes, catRes] = await Promise.all([api.getProductos(params), api.getCategorias()]);
-      setProductos(prodRes.data.productos || []); setCategorias(catRes.data.categorias || []);
-    } catch (e) { console.error(e); } finally { setLoading(false); }
-  }, [search, categoriaFilter]);
-
-  useEffect(() => { loadProductos(); }, [loadProductos]);
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    try { if (editingProduct) await api.updateProducto(editingProduct.id, formData); else await api.createProducto(formData);
-      setShowModal(false); setEditingProduct(null); loadProductos();
-    } catch (error) { alert(formatApiError(error.response?.data?.detail)); }
+  const handleSave = async () => {
+    await onSetMeta({ periodo: metas?.periodo, meta_ventas: metaVentas });
+    setShowModal(false);
   };
 
-  const handleEdit = (p) => { setEditingProduct(p); setFormData({ codigo: p.codigo, nombre: p.nombre, variante: p.variante || '', categoria: p.categoria, proveedor: p.proveedor, precio_con_iva: p.precio_con_iva, iva_pct: p.iva_pct, costo: p.costo, stock: p.stock, stock_minimo: p.stock_minimo, margen: p.margen }); setShowModal(true); };
-  const handleDelete = async (id) => { if (window.confirm('¿Eliminar?')) { try { await api.deleteProducto(id); loadProductos(); } catch { alert('Error'); } } };
-  const resetForm = () => setFormData({ codigo: '', nombre: '', variante: '', categoria: '', proveedor: '', precio_con_iva: 0, iva_pct: 10, costo: 0, stock: 0, stock_minimo: 2, margen: 15 });
+  if (!metas) return <div className="h-full flex items-center justify-center text-muted-foreground">Cargando...</div>;
+
+  const porcentaje = metas.porcentaje_ventas || 0;
+  const colorBarra = porcentaje >= 100 ? '#2A9D8F' : porcentaje >= 70 ? '#E9C46A' : '#E63946';
 
   return (
-    <div className="space-y-6 animate-fade-in" data-testid="productos-view">
-      <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-heading font-semibold text-foreground">Productos</h2>
-        {canCreate && <button onClick={() => { resetForm(); setEditingProduct(null); setShowModal(true); }} className="flex items-center gap-2 bg-[#E63946] text-white px-4 py-2 rounded-md hover:bg-[#D90429]" data-testid="add-producto-btn"><Plus size={20} /><span>Nuevo</span></button>}
-      </div>
-      <div className="flex flex-wrap gap-4">
-        <div className="relative flex-1 min-w-[200px]"><MagnifyingGlass size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" /><input type="text" placeholder="Buscar..." value={search} onChange={(e) => setSearch(e.target.value)} className="form-input pl-10" /></div>
-        <select value={categoriaFilter} onChange={(e) => setCategoriaFilter(e.target.value)} className="form-input w-48"><option value="">Todas</option>{categorias.map((cat) => <option key={cat} value={cat}>{cat}</option>)}</select>
-      </div>
-      <div className="bg-white border border-border rounded-md overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="data-table">
-            <thead><tr><th>Código</th><th>Nombre</th><th>Categoría</th><th className="text-right">Costo</th><th className="text-right">Precio</th><th className="text-center">Stock</th><th className="text-center">Acciones</th></tr></thead>
-            <tbody>{loading ? <tr><td colSpan={7} className="text-center py-8">Cargando...</td></tr> : productos.length === 0 ? <tr><td colSpan={7} className="text-center py-8">No hay productos</td></tr> :
-              productos.map((p) => (<tr key={p.id}><td className="font-mono text-sm">{p.codigo}</td><td><p className="font-medium">{p.nombre}</p>{p.variante && <p className="text-xs text-muted-foreground">{p.variante}</p>}</td><td><span className="badge bg-muted text-foreground">{p.categoria}</span></td><td className="text-right price-gs text-sm">{formatGs(p.costo)}</td><td className="text-right price-gs font-medium">{formatGs(p.precio_con_iva)}</td><td className="text-center"><span className={`font-semibold ${p.stock < p.stock_minimo ? 'low-stock' : 'ok-stock'}`}>{p.stock}</span></td>
-                <td><div className="flex items-center justify-center gap-1">{canEdit && <button onClick={() => handleEdit(p)} className="p-2 hover:bg-muted rounded-md"><Pencil size={16} className="text-muted-foreground" /></button>}{canDelete && <button onClick={() => handleDelete(p.id)} className="p-2 hover:bg-red-50 rounded-md"><Trash size={16} className="text-red-500" /></button>}</div></td></tr>))}</tbody>
-          </table>
+    <div className="h-full p-4 bg-white rounded-lg border border-border flex flex-col">
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          <Target size={20} className="text-[#E63946]" weight="duotone" />
+          <span className="font-semibold text-sm">Meta del Mes</span>
         </div>
+        {isAdmin && (
+          <button onClick={() => setShowModal(true)} className="p-1 hover:bg-muted rounded"><Gear size={16} /></button>
+        )}
       </div>
-      <Modal isOpen={showModal} onClose={() => { setShowModal(false); setEditingProduct(null); }} title={editingProduct ? 'Editar' : 'Nuevo'}>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="grid grid-cols-2 gap-4"><div className="form-group"><label className="form-label">Código</label><input type="text" value={formData.codigo} onChange={(e) => setFormData({ ...formData, codigo: e.target.value })} className="form-input" required disabled={!!editingProduct} /></div><div className="form-group"><label className="form-label">Categoría</label><input type="text" value={formData.categoria} onChange={(e) => setFormData({ ...formData, categoria: e.target.value })} className="form-input" required list="cat-list" /><datalist id="cat-list">{categorias.map(c => <option key={c} value={c} />)}</datalist></div></div>
-          <div className="form-group"><label className="form-label">Nombre</label><input type="text" value={formData.nombre} onChange={(e) => setFormData({ ...formData, nombre: e.target.value })} className="form-input" required /></div>
-          <div className="grid grid-cols-2 gap-4"><div className="form-group"><label className="form-label">Variante</label><input type="text" value={formData.variante} onChange={(e) => setFormData({ ...formData, variante: e.target.value })} className="form-input" /></div><div className="form-group"><label className="form-label">Proveedor</label><input type="text" value={formData.proveedor} onChange={(e) => setFormData({ ...formData, proveedor: e.target.value })} className="form-input" required /></div></div>
-          <div className="grid grid-cols-3 gap-4"><div className="form-group"><label className="form-label">Costo</label><input type="number" value={formData.costo} onChange={(e) => setFormData({ ...formData, costo: parseFloat(e.target.value) || 0 })} className="form-input" min="0" /></div><div className="form-group"><label className="form-label">Precio (IVA)</label><input type="number" value={formData.precio_con_iva} onChange={(e) => setFormData({ ...formData, precio_con_iva: parseFloat(e.target.value) || 0 })} className="form-input" min="0" /></div><div className="form-group"><label className="form-label">Stock</label><input type="number" value={formData.stock} onChange={(e) => setFormData({ ...formData, stock: parseInt(e.target.value) || 0 })} className="form-input" min="0" /></div></div>
-          <div className="flex justify-end gap-3 pt-4"><button type="button" onClick={() => { setShowModal(false); setEditingProduct(null); }} className="px-4 py-2 border border-border rounded-md hover:bg-muted">Cancelar</button><button type="submit" className="bg-[#E63946] text-white px-4 py-2 rounded-md hover:bg-[#D90429]">{editingProduct ? 'Actualizar' : 'Crear'}</button></div>
-        </form>
+      
+      {metas.tiene_meta ? (
+        <>
+          <div className="flex-1">
+            <div className="flex justify-between text-sm mb-1">
+              <span className="text-muted-foreground">Progreso</span>
+              <span className="font-semibold">{porcentaje.toFixed(0)}%</span>
+            </div>
+            <div className="w-full h-4 bg-gray-100 rounded-full overflow-hidden">
+              <div className="h-full rounded-full transition-all duration-500" style={{ width: `${Math.min(100, porcentaje)}%`, backgroundColor: colorBarra }}></div>
+            </div>
+            <div className="mt-3 space-y-1">
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">Actual:</span>
+                <span className="font-medium">{formatGs(metas.actual_ventas)}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">Meta:</span>
+                <span className="font-medium">{formatGs(metas.meta_ventas)}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">Faltan:</span>
+                <span className={`font-medium ${metas.meta_ventas - metas.actual_ventas <= 0 ? 'text-green-600' : 'text-orange-600'}`}>
+                  {formatGs(Math.max(0, metas.meta_ventas - metas.actual_ventas))}
+                </span>
+              </div>
+            </div>
+          </div>
+          {porcentaje >= 100 && (
+            <div className="mt-2 bg-green-50 text-green-700 text-xs font-medium px-2 py-1 rounded text-center">
+              ¡Meta cumplida!
+            </div>
+          )}
+        </>
+      ) : (
+        <div className="flex-1 flex flex-col items-center justify-center text-center">
+          <Target size={40} className="text-gray-300 mb-2" />
+          <p className="text-sm text-muted-foreground">Sin meta definida</p>
+          {isAdmin && <button onClick={() => setShowModal(true)} className="mt-2 text-sm text-[#E63946] hover:underline">Definir meta</button>}
+        </div>
+      )}
+
+      <Modal isOpen={showModal} onClose={() => setShowModal(false)} title="Definir Meta de Ventas" size="sm">
+        <div className="space-y-4">
+          <p className="text-sm text-muted-foreground">Período: {metas?.periodo}</p>
+          <div className="form-group">
+            <label className="form-label">Meta de Ventas (Gs.)</label>
+            <input type="number" value={metaVentas} onChange={(e) => setMetaVentas(parseFloat(e.target.value) || 0)} className="form-input" min="0" />
+          </div>
+          <div className="flex justify-end gap-3">
+            <button onClick={() => setShowModal(false)} className="px-4 py-2 border border-border rounded-md hover:bg-muted">Cancelar</button>
+            <button onClick={handleSave} className="bg-[#E63946] text-white px-4 py-2 rounded-md hover:bg-[#D90429]">Guardar</button>
+          </div>
+        </div>
       </Modal>
     </div>
   );
 }
 
-// Other views (simplified)
-function VentasView() { const [ventas, setVentas] = useState([]); const [loading, setLoading] = useState(true); useEffect(() => { api.getVentas({}).then(r => setVentas(r.data.ventas || [])).finally(() => setLoading(false)); }, []); return (<div className="space-y-6" data-testid="ventas-view"><h2 className="text-2xl font-heading font-semibold">Ventas</h2><div className="bg-white border border-border rounded-md overflow-hidden"><table className="data-table"><thead><tr><th>Fecha</th><th>Cliente</th><th className="text-right">Total</th><th className="text-right">Utilidad</th></tr></thead><tbody>{loading ? <tr><td colSpan={4} className="text-center py-8">Cargando...</td></tr> : ventas.length === 0 ? <tr><td colSpan={4} className="text-center py-8">Sin ventas</td></tr> : ventas.map(v => (<tr key={v.id}><td>{new Date(v.fecha).toLocaleDateString('es-PY')}</td><td className="font-medium">{v.cliente_nombre}</td><td className="text-right price-gs">{formatGs(v.total)}</td><td className="text-right price-gs text-green-600">{formatGs(v.utilidad)}</td></tr>))}</tbody></table></div></div>); }
-function ComprasView() { const [compras, setCompras] = useState([]); const [loading, setLoading] = useState(true); useEffect(() => { api.getCompras({}).then(r => setCompras(r.data.compras || [])).finally(() => setLoading(false)); }, []); return (<div className="space-y-6" data-testid="compras-view"><h2 className="text-2xl font-heading font-semibold">Compras</h2><div className="bg-white border border-border rounded-md overflow-hidden"><table className="data-table"><thead><tr><th>Fecha</th><th>Proveedor</th><th>Factura</th><th className="text-right">Total</th></tr></thead><tbody>{loading ? <tr><td colSpan={4} className="text-center py-8">Cargando...</td></tr> : compras.length === 0 ? <tr><td colSpan={4} className="text-center py-8">Sin compras</td></tr> : compras.map(c => (<tr key={c.id}><td>{new Date(c.fecha).toLocaleDateString('es-PY')}</td><td className="font-medium">{c.proveedor_nombre}</td><td>{c.factura || '-'}</td><td className="text-right price-gs">{formatGs(c.total)}</td></tr>))}</tbody></table></div></div>); }
-function ClientesView() { const [clientes, setClientes] = useState([]); const [loading, setLoading] = useState(true); useEffect(() => { api.getClientes({}).then(r => setClientes(r.data.clientes || [])).finally(() => setLoading(false)); }, []); return (<div className="space-y-6" data-testid="clientes-view"><h2 className="text-2xl font-heading font-semibold">Clientes</h2><div className="bg-white border border-border rounded-md overflow-hidden"><table className="data-table"><thead><tr><th>Nombre</th><th>Teléfono</th><th>Ciudad</th><th className="text-right">Total</th></tr></thead><tbody>{loading ? <tr><td colSpan={4} className="text-center py-8">Cargando...</td></tr> : clientes.length === 0 ? <tr><td colSpan={4} className="text-center py-8">Sin clientes</td></tr> : clientes.map(c => (<tr key={c.id}><td className="font-medium">{c.nombre}</td><td>{c.telefono || '-'}</td><td>{c.ciudad || '-'}</td><td className="text-right price-gs">{formatGs(c.total_compras || 0)}</td></tr>))}</tbody></table></div></div>); }
-function ProveedoresView() { const [proveedores, setProveedores] = useState([]); const [loading, setLoading] = useState(true); useEffect(() => { api.getProveedores({}).then(r => setProveedores(r.data.proveedores || [])).finally(() => setLoading(false)); }, []); return (<div className="space-y-6" data-testid="proveedores-view"><h2 className="text-2xl font-heading font-semibold">Proveedores</h2><div className="bg-white border border-border rounded-md overflow-hidden"><table className="data-table"><thead><tr><th>Nombre</th><th>Contacto</th><th>Teléfono</th><th className="text-right">Total</th></tr></thead><tbody>{loading ? <tr><td colSpan={4} className="text-center py-8">Cargando...</td></tr> : proveedores.length === 0 ? <tr><td colSpan={4} className="text-center py-8">Sin proveedores</td></tr> : proveedores.map(p => (<tr key={p.id}><td className="font-medium">{p.nombre}</td><td>{p.contacto || '-'}</td><td>{p.telefono || '-'}</td><td className="text-right price-gs">{formatGs(p.total_compras || 0)}</td></tr>))}</tbody></table></div></div>); }
-function GastosView() { const [gastos, setGastos] = useState([]); const [loading, setLoading] = useState(true); useEffect(() => { api.getGastos({}).then(r => setGastos(r.data.gastos || [])).finally(() => setLoading(false)); }, []); const total = gastos.reduce((s, g) => s + (g.monto || 0), 0); return (<div className="space-y-6" data-testid="gastos-view"><div><h2 className="text-2xl font-heading font-semibold">Gastos</h2><p className="text-muted-foreground">Total: {formatGs(total)}</p></div><div className="bg-white border border-border rounded-md overflow-hidden"><table className="data-table"><thead><tr><th>Fecha</th><th>Categoría</th><th>Descripción</th><th className="text-right">Monto</th></tr></thead><tbody>{loading ? <tr><td colSpan={4} className="text-center py-8">Cargando...</td></tr> : gastos.length === 0 ? <tr><td colSpan={4} className="text-center py-8">Sin gastos</td></tr> : gastos.map(g => (<tr key={g.id}><td>{new Date(g.fecha).toLocaleDateString('es-PY')}</td><td><span className="badge bg-orange-100 text-orange-800">{g.categoria}</span></td><td>{g.descripcion}</td><td className="text-right price-gs">{formatGs(g.monto)}</td></tr>))}</tbody></table></div></div>); }
-function StockHistorialView() { const [movimientos, setMovimientos] = useState([]); const [loading, setLoading] = useState(true); useEffect(() => { api.getStockMovimientos({}).then(r => setMovimientos(r.data.movimientos || [])).finally(() => setLoading(false)); }, []); return (<div className="space-y-6" data-testid="stock-historial-view"><h2 className="text-2xl font-heading font-semibold">Historial de Stock</h2><div className="bg-white border border-border rounded-md overflow-hidden"><div className="overflow-x-auto max-h-[600px]"><table className="data-table"><thead className="sticky top-0 bg-white"><tr><th>Fecha</th><th>Producto</th><th>Tipo</th><th className="text-right">Cant.</th><th className="text-right">Anterior</th><th className="text-right">Nuevo</th><th>Usuario</th></tr></thead><tbody>{loading ? <tr><td colSpan={7} className="text-center py-8">Cargando...</td></tr> : movimientos.length === 0 ? <tr><td colSpan={7} className="text-center py-8">Sin movimientos</td></tr> : movimientos.map(m => (<tr key={m.id}><td className="text-sm whitespace-nowrap">{new Date(m.fecha).toLocaleString('es-PY')}</td><td className="font-medium">{m.producto_nombre}</td><td><span className={`badge ${m.tipo === 'entrada' ? 'badge-success' : 'badge-warning'}`}>{m.tipo === 'entrada' ? '+' : '-'} {m.tipo}</span></td><td className="text-right font-mono">{m.cantidad}</td><td className="text-right font-mono text-muted-foreground">{m.stock_anterior}</td><td className="text-right font-mono font-medium">{m.stock_nuevo}</td><td className="text-sm">{m.usuario_email || '-'}</td></tr>))}</tbody></table></div></div></div>); }
-function UsuariosView() { const [usuarios, setUsuarios] = useState([]); const [loading, setLoading] = useState(true); useEffect(() => { api.getUsuarios().then(r => setUsuarios(r.data.usuarios || [])).finally(() => setLoading(false)); }, []); return (<div className="space-y-6" data-testid="usuarios-view"><h2 className="text-2xl font-heading font-semibold">Usuarios</h2><div className="bg-white border border-border rounded-md overflow-hidden"><table className="data-table"><thead><tr><th>Usuario</th><th>Nombre</th><th>Rol</th><th>Estado</th></tr></thead><tbody>{loading ? <tr><td colSpan={4} className="text-center py-8">Cargando...</td></tr> : usuarios.map(u => (<tr key={u.id}><td className="font-medium">{u.email}</td><td>{u.nombre || '-'}</td><td><span className={`badge ${u.role === 'admin' ? 'bg-purple-100 text-purple-800' : 'bg-blue-100 text-blue-800'}`}>{u.role}</span></td><td><span className={`badge ${u.activo !== false ? 'badge-success' : 'badge-danger'}`}>{u.activo !== false ? 'Activo' : 'Inactivo'}</span></td></tr>))}</tbody></table></div></div>); }
-function AuditoriaView() { const [registros, setRegistros] = useState([]); const [loading, setLoading] = useState(true); useEffect(() => { api.getAuditoria({}).then(r => setRegistros(r.data.registros || [])).finally(() => setLoading(false)); }, []); return (<div className="space-y-6" data-testid="auditoria-view"><h2 className="text-2xl font-heading font-semibold">Auditoría</h2><div className="bg-white border border-border rounded-md overflow-hidden"><div className="overflow-x-auto max-h-[600px]"><table className="data-table"><thead className="sticky top-0 bg-white"><tr><th>Fecha</th><th>Usuario</th><th>Acción</th><th>Módulo</th><th>Detalle</th></tr></thead><tbody>{loading ? <tr><td colSpan={5} className="text-center py-8">Cargando...</td></tr> : registros.map(r => (<tr key={r.id}><td className="text-sm whitespace-nowrap">{new Date(r.fecha).toLocaleString('es-PY')}</td><td className="font-medium">{r.usuario_email}</td><td><span className="badge bg-muted text-foreground">{r.accion}</span></td><td className="capitalize">{r.modulo}</td><td className="text-sm text-muted-foreground max-w-xs truncate">{JSON.stringify(r.detalle)}</td></tr>))}</tbody></table></div></div></div>); }
+function WidgetChart({ type, data, title, dataKey, nameKey, colors }) {
+  if (!data || data.length === 0) {
+    return (
+      <div className="h-full p-4 bg-white rounded-lg border border-border flex flex-col">
+        <h4 className="font-semibold text-sm mb-2">{title}</h4>
+        <div className="flex-1 flex items-center justify-center text-muted-foreground text-sm">Sin datos</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="h-full p-4 bg-white rounded-lg border border-border flex flex-col">
+      <h4 className="font-semibold text-sm mb-2">{title}</h4>
+      <div className="flex-1">
+        <ResponsiveContainer width="100%" height="100%">
+          {type === 'area' ? (
+            <AreaChart data={data}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+              <XAxis dataKey={nameKey} tick={{ fontSize: 9 }} />
+              <YAxis tick={{ fontSize: 9 }} tickFormatter={formatGsShort} />
+              <Tooltip content={<CustomTooltip />} />
+              <Legend wrapperStyle={{ fontSize: '10px' }} />
+              <Area type="monotone" dataKey="ventas" name="Ventas" stroke="#2A9D8F" fill="#2A9D8F" fillOpacity={0.3} />
+              <Area type="monotone" dataKey="utilidad" name="Utilidad" stroke="#E63946" fill="#E63946" fillOpacity={0.3} />
+            </AreaChart>
+          ) : type === 'bar' ? (
+            <BarChart data={data}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+              <XAxis dataKey={nameKey} tick={{ fontSize: 9 }} />
+              <YAxis tick={{ fontSize: 9 }} tickFormatter={formatGsShort} />
+              <Tooltip content={<CustomTooltip />} />
+              <Bar dataKey={dataKey} name="Total" fill={colors?.[0] || "#E63946"} radius={[4, 4, 0, 0]} />
+            </BarChart>
+          ) : type === 'bar-horizontal' ? (
+            <BarChart data={data} layout="vertical">
+              <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+              <XAxis type="number" tick={{ fontSize: 9 }} tickFormatter={formatGsShort} />
+              <YAxis type="category" dataKey={nameKey} width={100} tick={{ fontSize: 8 }} />
+              <Tooltip content={<CustomTooltip />} />
+              <Bar dataKey={dataKey} name="Total" fill={colors?.[0] || "#E63946"} radius={[0, 4, 4, 0]} />
+            </BarChart>
+          ) : type === 'pie' ? (
+            <PieChart>
+              <Pie data={data} dataKey={dataKey} nameKey={nameKey} cx="50%" cy="50%" outerRadius="80%" label={({ percent }) => `${(percent * 100).toFixed(0)}%`} labelLine={false}>
+                {data.map((_, i) => (<Cell key={i} fill={COLORS[i % COLORS.length]} />))}
+              </Pie>
+              <Tooltip formatter={(v) => formatGs(v)} />
+              <Legend wrapperStyle={{ fontSize: '9px' }} />
+            </PieChart>
+          ) : null}
+        </ResponsiveContainer>
+      </div>
+    </div>
+  );
+}
+
+function WidgetTable({ title, data, columns }) {
+  return (
+    <div className="h-full p-4 bg-white rounded-lg border border-border flex flex-col">
+      <h4 className="font-semibold text-sm mb-2">{title}</h4>
+      <div className="flex-1 overflow-auto">
+        <table className="w-full text-sm">
+          <thead><tr className="border-b">{columns.map((c, i) => <th key={i} className={`py-1 px-2 text-left text-xs ${c.align || ''}`}>{c.label}</th>)}</tr></thead>
+          <tbody>
+            {data?.length > 0 ? data.slice(0, 5).map((r, i) => (
+              <tr key={i} className="border-b last:border-0">
+                {columns.map((c, j) => <td key={j} className={`py-1 px-2 ${c.align || ''}`}>{c.format ? c.format(r[c.key]) : r[c.key]}</td>)}
+              </tr>
+            )) : <tr><td colSpan={columns.length} className="text-center py-4 text-muted-foreground">Sin datos</td></tr>}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function WidgetAlertaStock({ bajoStock }) {
+  if (!bajoStock || bajoStock.length === 0) {
+    return (
+      <div className="h-full p-4 bg-green-50 rounded-lg border border-green-200 flex items-center justify-center">
+        <Check size={20} className="text-green-600 mr-2" />
+        <span className="text-green-700 font-medium text-sm">Todos los productos tienen stock suficiente</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="h-full p-4 bg-yellow-50 rounded-lg border border-yellow-200 flex flex-col">
+      <div className="flex items-center gap-2 mb-2">
+        <Warning size={18} className="text-yellow-600" weight="fill" />
+        <span className="font-semibold text-sm text-yellow-800">Productos con Bajo Stock ({bajoStock.length})</span>
+      </div>
+      <div className="flex-1 overflow-auto">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
+          {bajoStock.slice(0, 8).map((p, i) => (
+            <div key={i} className="bg-white border border-yellow-200 rounded px-2 py-1">
+              <p className="text-xs font-medium truncate">{p.nombre}</p>
+              <p className="text-xs text-muted-foreground">Stock: <span className="text-red-600 font-semibold">{p.stock}</span>/{p.stock_minimo}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Widget Definitions
+const WIDGET_DEFINITIONS = {
+  'stat-ventas': { label: 'Total Ventas', category: 'stat', minW: 2, minH: 2 },
+  'stat-compras': { label: 'Total Compras', category: 'stat', minW: 2, minH: 2 },
+  'stat-utilidad': { label: 'Utilidad', category: 'stat', minW: 2, minH: 2 },
+  'stat-gastos': { label: 'Total Gastos', category: 'stat', minW: 2, minH: 2 },
+  'stat-productos': { label: 'Productos', category: 'stat', minW: 2, minH: 2 },
+  'stat-stock-valor': { label: 'Valor Stock', category: 'stat', minW: 2, minH: 2 },
+  'stat-sin-stock': { label: 'Sin Stock', category: 'stat', minW: 2, minH: 2 },
+  'stat-bajo-minimo': { label: 'Bajo Mínimo', category: 'stat', minW: 2, minH: 2 },
+  'meta-ventas': { label: 'Meta de Ventas', category: 'meta', minW: 3, minH: 3 },
+  'chart-ventas-periodo': { label: 'Ventas por Período', category: 'chart', minW: 4, minH: 3 },
+  'chart-compras-periodo': { label: 'Compras por Período', category: 'chart', minW: 4, minH: 3 },
+  'chart-top-productos': { label: 'Top Productos', category: 'chart', minW: 4, minH: 3 },
+  'chart-top-clientes': { label: 'Top Clientes', category: 'chart', minW: 4, minH: 3 },
+  'chart-stock-categoria': { label: 'Stock por Categoría', category: 'chart', minW: 4, minH: 3 },
+  'chart-gastos-categoria': { label: 'Gastos por Categoría', category: 'chart', minW: 4, minH: 3 },
+  'chart-compras-proveedor': { label: 'Compras por Proveedor', category: 'chart', minW: 4, minH: 3 },
+  'table-top-productos': { label: 'Tabla Top Productos', category: 'table', minW: 4, minH: 3 },
+  'table-top-clientes': { label: 'Tabla Top Clientes', category: 'table', minW: 4, minH: 3 },
+  'alerta-stock': { label: 'Alertas de Stock', category: 'alert', minW: 6, minH: 2 },
+};
+
+// Dashboard View with Widgets
+function DashboardView({ user }) {
+  const [dashboardData, setDashboardData] = useState(null);
+  const [stats, setStats] = useState({});
+  const [metas, setMetas] = useState(null);
+  const [templates, setTemplates] = useState({});
+  const [layout, setLayout] = useState([]);
+  const [currentTemplate, setCurrentTemplate] = useState('ejecutivo');
+  const [isCustom, setIsCustom] = useState(false);
+  const [editMode, setEditMode] = useState(false);
+  const [showTemplateModal, setShowTemplateModal] = useState(false);
+  const [showAddWidgetModal, setShowAddWidgetModal] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  const isAdmin = user?.role === 'admin';
+
+  const loadData = useCallback(async () => {
+    try {
+      const [dashRes, templatesRes, configRes, ventasP, comprasP, prodVend, ventasC, stockCat, gastosCat, comprasProv, metasRes] = await Promise.all([
+        api.getDashboard(),
+        api.getDashboardTemplates(),
+        api.getDashboardConfig(),
+        api.getVentasPorPeriodo({ periodo: 'mes', limite: 12 }),
+        api.getComprasPorPeriodo({ periodo: 'mes', limite: 12 }),
+        api.getProductosMasVendidos({ limite: 10 }),
+        api.getVentasPorCliente({ limite: 8 }),
+        api.getStockPorCategoria(),
+        api.getGastosPorCategoria(),
+        api.getComprasPorProveedor({ limite: 8 }),
+        api.getMetas()
+      ]);
+
+      setDashboardData(dashRes.data);
+      setTemplates(templatesRes.data.templates);
+      setMetas(metasRes.data);
+      setStats({
+        ventasPeriodo: ventasP.data.data || [],
+        comprasPeriodo: comprasP.data.data || [],
+        productosMasVendidos: prodVend.data.data || [],
+        ventasCliente: ventasC.data.data || [],
+        stockCategoria: stockCat.data.data || [],
+        gastosCategoria: gastosCat.data.data || [],
+        comprasProveedor: comprasProv.data.data || []
+      });
+
+      setLayout(configRes.data.layout || []);
+      setCurrentTemplate(configRes.data.template || 'ejecutivo');
+      setIsCustom(configRes.data.custom || false);
+    } catch (e) { console.error(e); }
+  }, []);
+
+  useEffect(() => { loadData(); }, [loadData]);
+
+  const handleSetMeta = async (data) => {
+    await api.setMeta(data);
+    const metasRes = await api.getMetas();
+    setMetas(metasRes.data);
+  };
+
+  const handleLayoutChange = (newLayout) => {
+    if (editMode) {
+      setLayout(newLayout);
+      setIsCustom(true);
+    }
+  };
+
+  const handleSaveLayout = async () => {
+    setSaving(true);
+    try {
+      await api.saveDashboardConfig({ template: currentTemplate, layout, custom: isCustom });
+      setEditMode(false);
+    } catch (e) { alert('Error al guardar'); }
+    finally { setSaving(false); }
+  };
+
+  const applyTemplate = (templateKey) => {
+    const template = templates[templateKey];
+    if (template) {
+      setLayout(template.widgets);
+      setCurrentTemplate(templateKey);
+      setIsCustom(false);
+      setShowTemplateModal(false);
+    }
+  };
+
+  const addWidget = (widgetId) => {
+    const def = WIDGET_DEFINITIONS[widgetId];
+    const maxY = layout.reduce((max, item) => Math.max(max, item.y + item.h), 0);
+    setLayout([...layout, { i: widgetId, x: 0, y: maxY, w: def.minW + 2, h: def.minH }]);
+    setIsCustom(true);
+    setShowAddWidgetModal(false);
+  };
+
+  const removeWidget = (widgetId) => {
+    setLayout(layout.filter(l => l.i !== widgetId));
+    setIsCustom(true);
+  };
+
+  const renderWidget = (widgetId) => {
+    const { resumen, top_productos, top_clientes, bajo_stock } = dashboardData || {};
+
+    switch (widgetId) {
+      case 'stat-ventas': return <WidgetStatCard label="Total Ventas" value={formatGs(resumen?.total_ventas)} icon={ShoppingCart} color="success" subtext={`${resumen?.cantidad_ventas || 0} ventas`} />;
+      case 'stat-compras': return <WidgetStatCard label="Total Compras" value={formatGs(resumen?.total_compras)} icon={Receipt} color="primary" subtext={`${resumen?.cantidad_compras || 0} compras`} />;
+      case 'stat-utilidad': return <WidgetStatCard label="Utilidad Bruta" value={formatGs(resumen?.utilidad_bruta)} icon={TrendUp} color="success" />;
+      case 'stat-gastos': return <WidgetStatCard label="Total Gastos" value={formatGs(resumen?.total_gastos)} icon={Money} color="warning" />;
+      case 'stat-productos': return <WidgetStatCard label="Productos" value={resumen?.total_productos} icon={Package} color="blue" />;
+      case 'stat-stock-valor': return <WidgetStatCard label="Valor Stock" value={formatGs(resumen?.valor_stock_venta)} icon={Package} color="blue" />;
+      case 'stat-sin-stock': return <WidgetStatCard label="Sin Stock" value={resumen?.productos_sin_stock} icon={Warning} color={resumen?.productos_sin_stock > 0 ? 'danger' : 'success'} />;
+      case 'stat-bajo-minimo': return <WidgetStatCard label="Bajo Mínimo" value={resumen?.productos_bajo_minimo} icon={Warning} color={resumen?.productos_bajo_minimo > 0 ? 'warning' : 'success'} />;
+      case 'meta-ventas': return <WidgetMetas metas={metas} isAdmin={isAdmin} onSetMeta={handleSetMeta} />;
+      case 'chart-ventas-periodo': return <WidgetChart type="area" data={stats.ventasPeriodo} title="Ventas y Utilidad por Mes" nameKey="periodo" />;
+      case 'chart-compras-periodo': return <WidgetChart type="bar" data={stats.comprasPeriodo} title="Compras por Mes" dataKey="total" nameKey="periodo" colors={['#457B9D']} />;
+      case 'chart-top-productos': return <WidgetChart type="bar-horizontal" data={stats.productosMasVendidos} title="Top Productos Vendidos" dataKey="total" nameKey="nombre" colors={['#E63946']} />;
+      case 'chart-top-clientes': return <WidgetChart type="bar" data={stats.ventasCliente} title="Ventas por Cliente" dataKey="total_compras" nameKey="nombre" colors={['#2A9D8F']} />;
+      case 'chart-stock-categoria': return <WidgetChart type="pie" data={stats.stockCategoria?.slice(0, 8)} title="Stock por Categoría" dataKey="valor_venta" nameKey="categoria" />;
+      case 'chart-gastos-categoria': return <WidgetChart type="pie" data={stats.gastosCategoria} title="Gastos por Categoría" dataKey="total" nameKey="categoria" />;
+      case 'chart-compras-proveedor': return <WidgetChart type="bar" data={stats.comprasProveedor} title="Compras por Proveedor" dataKey="total" nameKey="nombre" colors={['#F4A261']} />;
+      case 'table-top-productos': return <WidgetTable title="Top Productos" data={top_productos} columns={[{ key: 'nombre', label: 'Producto' }, { key: 'cantidad', label: 'Cant.', align: 'text-right' }, { key: 'total', label: 'Total', align: 'text-right', format: formatGs }]} />;
+      case 'table-top-clientes': return <WidgetTable title="Top Clientes" data={top_clientes} columns={[{ key: 'nombre', label: 'Cliente' }, { key: 'cantidad_compras', label: 'Compras', align: 'text-right' }, { key: 'total_compras', label: 'Total', align: 'text-right', format: formatGs }]} />;
+      case 'alerta-stock': return <WidgetAlertaStock bajoStock={bajo_stock} />;
+      default: return <div className="h-full flex items-center justify-center bg-white rounded-lg border">Widget: {widgetId}</div>;
+    }
+  };
+
+  if (!dashboardData) return <div className="p-8 text-center text-muted-foreground">Cargando dashboard...</div>;
+
+  const widgetsInLayout = layout.map(l => l.i);
+  const availableWidgets = Object.keys(WIDGET_DEFINITIONS).filter(w => !widgetsInLayout.includes(w));
+
+  return (
+    <div className="space-y-4" data-testid="dashboard-view">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-2xl font-heading font-semibold">Dashboard</h2>
+          <p className="text-sm text-muted-foreground">
+            {isCustom ? 'Personalizado' : `Plantilla: ${templates[currentTemplate]?.nombre || currentTemplate}`}
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          {editMode ? (
+            <>
+              <button onClick={() => setShowAddWidgetModal(true)} className="flex items-center gap-2 px-3 py-2 border border-border rounded-md hover:bg-muted text-sm">
+                <Plus size={16} /> Widget
+              </button>
+              <button onClick={handleSaveLayout} disabled={saving} className="flex items-center gap-2 px-3 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 text-sm">
+                <FloppyDisk size={16} /> {saving ? 'Guardando...' : 'Guardar'}
+              </button>
+              <button onClick={() => { setEditMode(false); loadData(); }} className="px-3 py-2 border border-border rounded-md hover:bg-muted text-sm">
+                Cancelar
+              </button>
+            </>
+          ) : (
+            <>
+              <button onClick={() => setShowTemplateModal(true)} className="flex items-center gap-2 px-3 py-2 border border-border rounded-md hover:bg-muted text-sm">
+                <Layout size={16} /> Plantillas
+              </button>
+              <button onClick={() => setEditMode(true)} className="flex items-center gap-2 px-3 py-2 bg-[#E63946] text-white rounded-md hover:bg-[#D90429] text-sm">
+                <Sliders size={16} /> Personalizar
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+
+      {editMode && (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-800">
+          <ArrowsOutCardinal size={16} className="inline mr-2" />
+          <strong>Modo edición:</strong> Arrastra y redimensiona los widgets. Haz clic en la X para eliminar.
+        </div>
+      )}
+
+      {/* Grid */}
+      <GridLayout
+        className="layout"
+        layout={layout}
+        cols={12}
+        rowHeight={60}
+        width={1200}
+        onLayoutChange={handleLayoutChange}
+        isDraggable={editMode}
+        isResizable={editMode}
+        draggableHandle=".widget-drag-handle"
+      >
+        {layout.map((item) => (
+          <div key={item.i} className="relative">
+            {editMode && (
+              <>
+                <div className="widget-drag-handle absolute top-0 left-0 right-8 h-8 cursor-move z-10"></div>
+                <button onClick={() => removeWidget(item.i)} className="absolute top-1 right-1 z-20 p-1 bg-red-500 text-white rounded hover:bg-red-600">
+                  <X size={12} />
+                </button>
+              </>
+            )}
+            {renderWidget(item.i)}
+          </div>
+        ))}
+      </GridLayout>
+
+      {/* Templates Modal */}
+      <Modal isOpen={showTemplateModal} onClose={() => setShowTemplateModal(false)} title="Seleccionar Plantilla" size="lg">
+        <div className="grid grid-cols-2 gap-4">
+          {Object.entries(templates).map(([key, template]) => (
+            <button
+              key={key}
+              onClick={() => applyTemplate(key)}
+              className={`p-4 border rounded-lg text-left hover:border-[#E63946] transition-colors ${currentTemplate === key && !isCustom ? 'border-[#E63946] bg-red-50' : 'border-border'}`}
+            >
+              <div className="flex items-center gap-2 mb-2">
+                {key === 'ejecutivo' && <House size={20} className="text-[#E63946]" />}
+                {key === 'ventas' && <ShoppingCart size={20} className="text-green-600" />}
+                {key === 'inventario' && <Package size={20} className="text-blue-600" />}
+                {key === 'analitico' && <ChartBar size={20} className="text-purple-600" />}
+                <span className="font-semibold">{template.nombre}</span>
+              </div>
+              <p className="text-sm text-muted-foreground">{template.descripcion}</p>
+              <p className="text-xs text-muted-foreground mt-2">{template.widgets.length} widgets</p>
+            </button>
+          ))}
+        </div>
+      </Modal>
+
+      {/* Add Widget Modal */}
+      <Modal isOpen={showAddWidgetModal} onClose={() => setShowAddWidgetModal(false)} title="Agregar Widget" size="lg">
+        <div className="space-y-4">
+          {['stat', 'meta', 'chart', 'table', 'alert'].map((category) => {
+            const widgets = availableWidgets.filter(w => WIDGET_DEFINITIONS[w].category === category);
+            if (widgets.length === 0) return null;
+            return (
+              <div key={category}>
+                <h4 className="font-semibold text-sm mb-2 capitalize">{category === 'stat' ? 'Indicadores' : category === 'meta' ? 'Metas' : category === 'chart' ? 'Gráficos' : category === 'table' ? 'Tablas' : 'Alertas'}</h4>
+                <div className="grid grid-cols-3 gap-2">
+                  {widgets.map((widgetId) => (
+                    <button
+                      key={widgetId}
+                      onClick={() => addWidget(widgetId)}
+                      className="p-3 border border-border rounded-lg hover:border-[#E63946] hover:bg-red-50 text-left"
+                    >
+                      <span className="text-sm font-medium">{WIDGET_DEFINITIONS[widgetId].label}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+          {availableWidgets.length === 0 && (
+            <p className="text-center text-muted-foreground py-8">Todos los widgets ya están en el dashboard</p>
+          )}
+        </div>
+      </Modal>
+    </div>
+  );
+}
+
+// Other Views (simplified)
+function EstadisticasView() {
+  const [periodo, setPeriodo] = useState('mes');
+  const [data, setData] = useState({});
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    setLoading(true);
+    Promise.all([
+      api.getVentasPorPeriodo({ periodo, limite: 12 }),
+      api.getComprasPorPeriodo({ periodo, limite: 12 }),
+      api.getProductosMasVendidos({ limite: 15 }),
+      api.getVentasPorCliente({ limite: 10 }),
+      api.getStockPorCategoria(),
+      api.getGastosPorCategoria(),
+      api.getResumenGeneral()
+    ]).then(([vp, cp, pmv, vc, sc, gc, res]) => {
+      setData({
+        ventasPeriodo: vp.data.data || [],
+        comprasPeriodo: cp.data.data || [],
+        productosMasVendidos: pmv.data.data || [],
+        ventasCliente: vc.data.data || [],
+        stockCategoria: sc.data.data || [],
+        gastosCategoria: gc.data.data || [],
+        resumen: res.data
+      });
+    }).finally(() => setLoading(false));
+  }, [periodo]);
+
+  if (loading) return <div className="p-8 text-center">Cargando...</div>;
+
+  return (
+    <div className="space-y-6" data-testid="estadisticas-view">
+      <div className="flex items-center justify-between">
+        <h2 className="text-2xl font-heading font-semibold">Estadísticas</h2>
+        <select value={periodo} onChange={(e) => setPeriodo(e.target.value)} className="form-input w-40">
+          <option value="dia">Por Día</option>
+          <option value="semana">Por Semana</option>
+          <option value="mes">Por Mes</option>
+          <option value="año">Por Año</option>
+        </select>
+      </div>
+      
+      {data.resumen && (
+        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+          <div className="stat-card"><p className="stat-label">Total Ventas</p><p className="stat-value text-green-600">{formatGs(data.resumen.ventas?.total)}</p></div>
+          <div className="stat-card"><p className="stat-label">Utilidad</p><p className="stat-value text-green-600">{formatGs(data.resumen.ventas?.utilidad)}</p></div>
+          <div className="stat-card"><p className="stat-label">Total Compras</p><p className="stat-value text-[#E63946]">{formatGs(data.resumen.compras?.total)}</p></div>
+          <div className="stat-card"><p className="stat-label">Total Gastos</p><p className="stat-value text-yellow-600">{formatGs(data.resumen.gastos?.total)}</p></div>
+          <div className="stat-card"><p className="stat-label">Utilidad Neta</p><p className={`stat-value ${data.resumen.utilidad_neta >= 0 ? 'text-green-600' : 'text-red-600'}`}>{formatGs(data.resumen.utilidad_neta)}</p></div>
+          <div className="stat-card"><p className="stat-label">Valor Stock</p><p className="stat-value text-blue-600">{formatGs(data.resumen.stock?.valor_venta)}</p></div>
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="bg-white border border-border rounded-lg p-6 h-80">
+          <h3 className="font-semibold mb-4">Ventas y Utilidad</h3>
+          <ResponsiveContainer width="100%" height="90%">
+            <AreaChart data={data.ventasPeriodo}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+              <XAxis dataKey="periodo" tick={{ fontSize: 10 }} />
+              <YAxis tick={{ fontSize: 10 }} tickFormatter={formatGsShort} />
+              <Tooltip content={<CustomTooltip />} />
+              <Legend />
+              <Area type="monotone" dataKey="ventas" name="Ventas" stroke="#2A9D8F" fill="#2A9D8F" fillOpacity={0.3} />
+              <Area type="monotone" dataKey="utilidad" name="Utilidad" stroke="#E63946" fill="#E63946" fillOpacity={0.3} />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+        <div className="bg-white border border-border rounded-lg p-6 h-80">
+          <h3 className="font-semibold mb-4">Top Productos</h3>
+          <ResponsiveContainer width="100%" height="90%">
+            <BarChart data={data.productosMasVendidos?.slice(0, 10)} layout="vertical">
+              <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+              <XAxis type="number" tick={{ fontSize: 10 }} tickFormatter={formatGsShort} />
+              <YAxis type="category" dataKey="nombre" width={120} tick={{ fontSize: 9 }} />
+              <Tooltip content={<CustomTooltip />} />
+              <Bar dataKey="total" name="Total" fill="#E63946" radius={[0, 4, 4, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Simplified other views
+function ProductosView({ user }) { const [productos, setProductos] = useState([]); const [loading, setLoading] = useState(true); const [search, setSearch] = useState(''); useEffect(() => { api.getProductos(search ? { search } : {}).then(r => setProductos(r.data.productos || [])).finally(() => setLoading(false)); }, [search]); return (<div className="space-y-6" data-testid="productos-view"><div className="flex items-center justify-between"><h2 className="text-2xl font-heading font-semibold">Productos</h2></div><div className="relative max-w-md"><MagnifyingGlass size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" /><input type="text" placeholder="Buscar..." value={search} onChange={(e) => setSearch(e.target.value)} className="form-input pl-10" /></div><div className="bg-white border border-border rounded-md overflow-hidden"><table className="data-table"><thead><tr><th>Código</th><th>Nombre</th><th>Categoría</th><th className="text-right">Precio</th><th className="text-center">Stock</th></tr></thead><tbody>{loading ? <tr><td colSpan={5} className="text-center py-8">Cargando...</td></tr> : productos.length === 0 ? <tr><td colSpan={5} className="text-center py-8">Sin productos</td></tr> : productos.map(p => (<tr key={p.id}><td className="font-mono text-sm">{p.codigo}</td><td className="font-medium">{p.nombre}</td><td><span className="badge bg-muted text-foreground">{p.categoria}</span></td><td className="text-right price-gs">{formatGs(p.precio_con_iva)}</td><td className="text-center"><span className={p.stock < p.stock_minimo ? 'text-red-600 font-semibold' : 'text-green-600'}>{p.stock}</span></td></tr>))}</tbody></table></div></div>); }
+function VentasView() { const [ventas, setVentas] = useState([]); const [loading, setLoading] = useState(true); useEffect(() => { api.getVentas({}).then(r => setVentas(r.data.ventas || [])).finally(() => setLoading(false)); }, []); return (<div className="space-y-6" data-testid="ventas-view"><h2 className="text-2xl font-heading font-semibold">Ventas</h2><div className="bg-white border border-border rounded-md"><table className="data-table"><thead><tr><th>Fecha</th><th>Cliente</th><th className="text-right">Total</th><th className="text-right">Utilidad</th></tr></thead><tbody>{loading ? <tr><td colSpan={4} className="text-center py-8">Cargando...</td></tr> : ventas.length === 0 ? <tr><td colSpan={4} className="text-center py-8">Sin ventas</td></tr> : ventas.map(v => (<tr key={v.id}><td>{new Date(v.fecha).toLocaleDateString('es-PY')}</td><td className="font-medium">{v.cliente_nombre}</td><td className="text-right price-gs">{formatGs(v.total)}</td><td className="text-right price-gs text-green-600">{formatGs(v.utilidad)}</td></tr>))}</tbody></table></div></div>); }
+function ComprasView() { const [compras, setCompras] = useState([]); const [loading, setLoading] = useState(true); useEffect(() => { api.getCompras({}).then(r => setCompras(r.data.compras || [])).finally(() => setLoading(false)); }, []); return (<div className="space-y-6" data-testid="compras-view"><h2 className="text-2xl font-heading font-semibold">Compras</h2><div className="bg-white border border-border rounded-md"><table className="data-table"><thead><tr><th>Fecha</th><th>Proveedor</th><th>Factura</th><th className="text-right">Total</th></tr></thead><tbody>{loading ? <tr><td colSpan={4} className="text-center py-8">Cargando...</td></tr> : compras.length === 0 ? <tr><td colSpan={4} className="text-center py-8">Sin compras</td></tr> : compras.map(c => (<tr key={c.id}><td>{new Date(c.fecha).toLocaleDateString('es-PY')}</td><td className="font-medium">{c.proveedor_nombre}</td><td>{c.factura || '-'}</td><td className="text-right price-gs">{formatGs(c.total)}</td></tr>))}</tbody></table></div></div>); }
+function ClientesView() { const [clientes, setClientes] = useState([]); const [loading, setLoading] = useState(true); useEffect(() => { api.getClientes({}).then(r => setClientes(r.data.clientes || [])).finally(() => setLoading(false)); }, []); return (<div className="space-y-6" data-testid="clientes-view"><h2 className="text-2xl font-heading font-semibold">Clientes</h2><div className="bg-white border border-border rounded-md"><table className="data-table"><thead><tr><th>Nombre</th><th>Teléfono</th><th>Ciudad</th><th className="text-right">Total</th></tr></thead><tbody>{loading ? <tr><td colSpan={4} className="text-center py-8">Cargando...</td></tr> : clientes.map(c => (<tr key={c.id}><td className="font-medium">{c.nombre}</td><td>{c.telefono || '-'}</td><td>{c.ciudad || '-'}</td><td className="text-right price-gs">{formatGs(c.total_compras || 0)}</td></tr>))}</tbody></table></div></div>); }
+function ProveedoresView() { const [proveedores, setProveedores] = useState([]); const [loading, setLoading] = useState(true); useEffect(() => { api.getProveedores({}).then(r => setProveedores(r.data.proveedores || [])).finally(() => setLoading(false)); }, []); return (<div className="space-y-6" data-testid="proveedores-view"><h2 className="text-2xl font-heading font-semibold">Proveedores</h2><div className="bg-white border border-border rounded-md"><table className="data-table"><thead><tr><th>Nombre</th><th>Contacto</th><th>Teléfono</th><th className="text-right">Total</th></tr></thead><tbody>{loading ? <tr><td colSpan={4} className="text-center py-8">Cargando...</td></tr> : proveedores.map(p => (<tr key={p.id}><td className="font-medium">{p.nombre}</td><td>{p.contacto || '-'}</td><td>{p.telefono || '-'}</td><td className="text-right price-gs">{formatGs(p.total_compras || 0)}</td></tr>))}</tbody></table></div></div>); }
+function GastosView() { const [gastos, setGastos] = useState([]); const [loading, setLoading] = useState(true); useEffect(() => { api.getGastos({}).then(r => setGastos(r.data.gastos || [])).finally(() => setLoading(false)); }, []); const total = gastos.reduce((s, g) => s + (g.monto || 0), 0); return (<div className="space-y-6" data-testid="gastos-view"><div><h2 className="text-2xl font-heading font-semibold">Gastos</h2><p className="text-muted-foreground">Total: {formatGs(total)}</p></div><div className="bg-white border border-border rounded-md"><table className="data-table"><thead><tr><th>Fecha</th><th>Categoría</th><th>Descripción</th><th className="text-right">Monto</th></tr></thead><tbody>{loading ? <tr><td colSpan={4} className="text-center py-8">Cargando...</td></tr> : gastos.map(g => (<tr key={g.id}><td>{new Date(g.fecha).toLocaleDateString('es-PY')}</td><td><span className="badge bg-orange-100 text-orange-800">{g.categoria}</span></td><td>{g.descripcion}</td><td className="text-right price-gs">{formatGs(g.monto)}</td></tr>))}</tbody></table></div></div>); }
+function ReportesView() { const exportCSV = (t) => window.open(`${API_URL}/api/reportes/${t}?formato=csv`, '_blank'); return (<div className="space-y-6" data-testid="reportes-view"><h2 className="text-2xl font-heading font-semibold">Reportes</h2><div className="bg-white border border-border rounded-md p-6"><h3 className="font-semibold mb-4">Exportar Reportes</h3><div className="grid grid-cols-1 md:grid-cols-3 gap-4"><button onClick={() => exportCSV('ventas')} className="flex items-center gap-3 p-4 border rounded-lg hover:bg-muted"><FileText size={24} className="text-green-600" /><div className="text-left"><p className="font-medium">Ventas CSV</p></div></button><button onClick={() => exportCSV('productos')} className="flex items-center gap-3 p-4 border rounded-lg hover:bg-muted"><Package size={24} className="text-blue-600" /><div className="text-left"><p className="font-medium">Inventario CSV</p></div></button><button onClick={() => exportCSV('stock-movimientos')} className="flex items-center gap-3 p-4 border rounded-lg hover:bg-muted"><ClockCounterClockwise size={24} className="text-orange-600" /><div className="text-left"><p className="font-medium">Mov. Stock CSV</p></div></button></div></div></div>); }
+function StockHistorialView() { const [movimientos, setMovimientos] = useState([]); const [loading, setLoading] = useState(true); useEffect(() => { api.getStockMovimientos({}).then(r => setMovimientos(r.data.movimientos || [])).finally(() => setLoading(false)); }, []); return (<div className="space-y-6" data-testid="stock-historial-view"><h2 className="text-2xl font-heading font-semibold">Historial Stock</h2><div className="bg-white border border-border rounded-md"><div className="overflow-x-auto max-h-[600px]"><table className="data-table"><thead className="sticky top-0 bg-white"><tr><th>Fecha</th><th>Producto</th><th>Tipo</th><th className="text-right">Cant.</th><th className="text-right">Anterior</th><th className="text-right">Nuevo</th><th>Usuario</th></tr></thead><tbody>{loading ? <tr><td colSpan={7} className="text-center py-8">Cargando...</td></tr> : movimientos.map(m => (<tr key={m.id}><td className="text-sm">{new Date(m.fecha).toLocaleString('es-PY')}</td><td className="font-medium">{m.producto_nombre}</td><td><span className={`badge ${m.tipo === 'entrada' ? 'badge-success' : 'badge-warning'}`}>{m.tipo}</span></td><td className="text-right font-mono">{m.cantidad}</td><td className="text-right text-muted-foreground">{m.stock_anterior}</td><td className="text-right font-medium">{m.stock_nuevo}</td><td className="text-sm">{m.usuario_email || '-'}</td></tr>))}</tbody></table></div></div></div>); }
+function UsuariosView() { const [usuarios, setUsuarios] = useState([]); const [loading, setLoading] = useState(true); useEffect(() => { api.getUsuarios().then(r => setUsuarios(r.data.usuarios || [])).finally(() => setLoading(false)); }, []); return (<div className="space-y-6" data-testid="usuarios-view"><h2 className="text-2xl font-heading font-semibold">Usuarios</h2><div className="bg-white border border-border rounded-md"><table className="data-table"><thead><tr><th>Usuario</th><th>Nombre</th><th>Rol</th><th>Estado</th></tr></thead><tbody>{loading ? <tr><td colSpan={4} className="text-center py-8">Cargando...</td></tr> : usuarios.map(u => (<tr key={u.id}><td className="font-medium">{u.email}</td><td>{u.nombre || '-'}</td><td><span className={`badge ${u.role === 'admin' ? 'bg-purple-100 text-purple-800' : 'bg-blue-100 text-blue-800'}`}>{u.role}</span></td><td><span className={`badge ${u.activo !== false ? 'badge-success' : 'badge-danger'}`}>{u.activo !== false ? 'Activo' : 'Inactivo'}</span></td></tr>))}</tbody></table></div></div>); }
+function AuditoriaView() { const [registros, setRegistros] = useState([]); const [loading, setLoading] = useState(true); useEffect(() => { api.getAuditoria({}).then(r => setRegistros(r.data.registros || [])).finally(() => setLoading(false)); }, []); return (<div className="space-y-6" data-testid="auditoria-view"><h2 className="text-2xl font-heading font-semibold">Auditoría</h2><div className="bg-white border border-border rounded-md"><div className="overflow-x-auto max-h-[600px]"><table className="data-table"><thead className="sticky top-0 bg-white"><tr><th>Fecha</th><th>Usuario</th><th>Acción</th><th>Módulo</th><th>Detalle</th></tr></thead><tbody>{loading ? <tr><td colSpan={5} className="text-center py-8">Cargando...</td></tr> : registros.map(r => (<tr key={r.id}><td className="text-sm">{new Date(r.fecha).toLocaleString('es-PY')}</td><td className="font-medium">{r.usuario_email}</td><td><span className="badge bg-muted">{r.accion}</span></td><td className="capitalize">{r.modulo}</td><td className="text-sm text-muted-foreground max-w-xs truncate">{JSON.stringify(r.detalle)}</td></tr>))}</tbody></table></div></div></div>); }
 
 // Main App
 function App() {
   const [user, setUser] = useState(null);
   const [authChecked, setAuthChecked] = useState(false);
   const [activeView, setActiveView] = useState('dashboard');
-  const [dashboardData, setDashboardData] = useState(null);
-  const [dashboardStats, setDashboardStats] = useState({});
 
-  useEffect(() => {
-    api.getMe().then(res => setUser(res.data)).catch(() => setUser(null)).finally(() => setAuthChecked(true));
-  }, []);
-
-  useEffect(() => {
-    if (user) {
-      Promise.all([
-        api.getDashboard(),
-        api.getVentasPorPeriodo({ periodo: 'mes', limite: 12 }),
-        api.getProductosMasVendidos({ limite: 10 }),
-        api.getStockPorCategoria(),
-        api.getVentasPorCliente({ limite: 8 })
-      ]).then(([dash, vp, pmv, sc, vc]) => {
-        setDashboardData(dash.data);
-        setDashboardStats({
-          ventasPeriodo: vp.data.data || [],
-          productosMasVendidos: pmv.data.data || [],
-          stockCategoria: sc.data.data || [],
-          ventasCliente: vc.data.data || []
-        });
-      }).catch(console.error);
-    }
-  }, [user]);
+  useEffect(() => { api.getMe().then(r => setUser(r.data)).catch(() => setUser(null)).finally(() => setAuthChecked(true)); }, []);
 
   const handleLogout = async () => { try { await api.logout(); } catch {} setUser(null); setActiveView('dashboard'); };
 
-  if (!authChecked) return (<div className="min-h-screen bg-background flex items-center justify-center"><div className="text-center"><div className="w-16 h-16 bg-[#E63946] rounded-2xl flex items-center justify-center mx-auto mb-4 animate-pulse"><span className="text-white font-heading font-bold text-2xl">pds</span></div><p className="text-muted-foreground">Cargando...</p></div></div>);
+  if (!authChecked) return (<div className="min-h-screen bg-background flex items-center justify-center"><div className="w-16 h-16 bg-[#E63946] rounded-2xl flex items-center justify-center animate-pulse"><span className="text-white font-heading font-bold text-2xl">pds</span></div></div>);
   if (!user) return <LoginPage onLogin={setUser} />;
 
   const renderView = () => {
     switch (activeView) {
-      case 'dashboard': return <Dashboard data={dashboardData} stats={dashboardStats} />;
+      case 'dashboard': return <DashboardView user={user} />;
       case 'estadisticas': return <EstadisticasView />;
       case 'productos': return <ProductosView user={user} />;
       case 'ventas': return <VentasView />;
@@ -986,7 +844,7 @@ function App() {
       case 'stock-historial': return <StockHistorialView />;
       case 'usuarios': return <UsuariosView />;
       case 'auditoria': return <AuditoriaView />;
-      default: return <Dashboard data={dashboardData} stats={dashboardStats} />;
+      default: return <DashboardView user={user} />;
     }
   };
 

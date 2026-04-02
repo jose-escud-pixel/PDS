@@ -53,6 +53,8 @@ gastos_col = db["gastos"]
 auditoria_col = db["auditoria"]
 stock_movimientos_col = db["stock_movimientos"]
 login_attempts_col = db["login_attempts"]
+dashboard_config_col = db["dashboard_config"]
+metas_col = db["metas"]
 
 # ============ PASSWORD & JWT ============
 def hash_password(password: str) -> str:
@@ -1343,6 +1345,238 @@ def reporte_stock_movimientos(
         )
     
     return {"total": len(movimientos), "movimientos": serialize_docs(movimientos)}
+
+# ============ DASHBOARD CONFIG ============
+# Plantillas predefinidas
+DASHBOARD_TEMPLATES = {
+    "ejecutivo": {
+        "nombre": "Ejecutivo",
+        "descripcion": "Visión general para administradores - Balance de todas las áreas",
+        "widgets": [
+            {"i": "stat-ventas", "x": 0, "y": 0, "w": 3, "h": 2},
+            {"i": "stat-compras", "x": 3, "y": 0, "w": 3, "h": 2},
+            {"i": "stat-utilidad", "x": 6, "y": 0, "w": 3, "h": 2},
+            {"i": "stat-gastos", "x": 9, "y": 0, "w": 3, "h": 2},
+            {"i": "meta-ventas", "x": 0, "y": 2, "w": 4, "h": 3},
+            {"i": "chart-ventas-periodo", "x": 4, "y": 2, "w": 8, "h": 3},
+            {"i": "chart-top-productos", "x": 0, "y": 5, "w": 6, "h": 4},
+            {"i": "chart-top-clientes", "x": 6, "y": 5, "w": 6, "h": 4},
+            {"i": "alerta-stock", "x": 0, "y": 9, "w": 12, "h": 2},
+        ]
+    },
+    "ventas": {
+        "nombre": "Ventas",
+        "descripcion": "Enfocado en rendimiento de ventas y clientes",
+        "widgets": [
+            {"i": "stat-ventas", "x": 0, "y": 0, "w": 4, "h": 2},
+            {"i": "stat-utilidad", "x": 4, "y": 0, "w": 4, "h": 2},
+            {"i": "meta-ventas", "x": 8, "y": 0, "w": 4, "h": 3},
+            {"i": "chart-ventas-periodo", "x": 0, "y": 2, "w": 8, "h": 4},
+            {"i": "chart-top-productos", "x": 0, "y": 6, "w": 6, "h": 4},
+            {"i": "chart-top-clientes", "x": 6, "y": 6, "w": 6, "h": 4},
+            {"i": "table-top-productos", "x": 0, "y": 10, "w": 6, "h": 3},
+            {"i": "table-top-clientes", "x": 6, "y": 10, "w": 6, "h": 3},
+        ]
+    },
+    "inventario": {
+        "nombre": "Inventario",
+        "descripcion": "Control de stock y movimientos",
+        "widgets": [
+            {"i": "stat-productos", "x": 0, "y": 0, "w": 3, "h": 2},
+            {"i": "stat-stock-valor", "x": 3, "y": 0, "w": 3, "h": 2},
+            {"i": "stat-sin-stock", "x": 6, "y": 0, "w": 3, "h": 2},
+            {"i": "stat-bajo-minimo", "x": 9, "y": 0, "w": 3, "h": 2},
+            {"i": "chart-stock-categoria", "x": 0, "y": 2, "w": 6, "h": 4},
+            {"i": "chart-compras-periodo", "x": 6, "y": 2, "w": 6, "h": 4},
+            {"i": "alerta-stock", "x": 0, "y": 6, "w": 12, "h": 3},
+            {"i": "chart-compras-proveedor", "x": 0, "y": 9, "w": 12, "h": 4},
+        ]
+    },
+    "analitico": {
+        "nombre": "Analítico",
+        "descripcion": "Todos los gráficos para análisis profundo",
+        "widgets": [
+            {"i": "stat-ventas", "x": 0, "y": 0, "w": 2, "h": 2},
+            {"i": "stat-compras", "x": 2, "y": 0, "w": 2, "h": 2},
+            {"i": "stat-utilidad", "x": 4, "y": 0, "w": 2, "h": 2},
+            {"i": "stat-gastos", "x": 6, "y": 0, "w": 2, "h": 2},
+            {"i": "stat-productos", "x": 8, "y": 0, "w": 2, "h": 2},
+            {"i": "stat-stock-valor", "x": 10, "y": 0, "w": 2, "h": 2},
+            {"i": "chart-ventas-periodo", "x": 0, "y": 2, "w": 6, "h": 3},
+            {"i": "chart-compras-periodo", "x": 6, "y": 2, "w": 6, "h": 3},
+            {"i": "chart-top-productos", "x": 0, "y": 5, "w": 6, "h": 4},
+            {"i": "chart-stock-categoria", "x": 6, "y": 5, "w": 6, "h": 4},
+            {"i": "chart-top-clientes", "x": 0, "y": 9, "w": 6, "h": 3},
+            {"i": "chart-gastos-categoria", "x": 6, "y": 9, "w": 6, "h": 3},
+        ]
+    }
+}
+
+@app.get("/api/dashboard/templates")
+def get_dashboard_templates(request: Request):
+    user = get_current_user(request)
+    return {"templates": DASHBOARD_TEMPLATES}
+
+@app.get("/api/dashboard/config")
+def get_dashboard_config(request: Request):
+    user = get_current_user(request)
+    
+    config = dashboard_config_col.find_one({"usuario_id": user["id"]})
+    if config:
+        return {
+            "template": config.get("template", "ejecutivo"),
+            "layout": config.get("layout", DASHBOARD_TEMPLATES["ejecutivo"]["widgets"]),
+            "custom": config.get("custom", False)
+        }
+    
+    # Default for new users
+    return {
+        "template": "ejecutivo",
+        "layout": DASHBOARD_TEMPLATES["ejecutivo"]["widgets"],
+        "custom": False
+    }
+
+@app.post("/api/dashboard/config")
+def save_dashboard_config(request: Request, data: dict):
+    user = get_current_user(request)
+    
+    config_data = {
+        "usuario_id": user["id"],
+        "template": data.get("template", "ejecutivo"),
+        "layout": data.get("layout", []),
+        "custom": data.get("custom", False),
+        "updated_at": datetime.now(timezone.utc).isoformat()
+    }
+    
+    dashboard_config_col.update_one(
+        {"usuario_id": user["id"]},
+        {"$set": config_data},
+        upsert=True
+    )
+    
+    registrar_auditoria(user["id"], user["email"], "actualizar_dashboard", "configuracion",
+                        {"template": config_data["template"], "custom": config_data["custom"]})
+    
+    return {"message": "Configuración guardada"}
+
+# ============ METAS DE VENTAS ============
+class MetaVentas(BaseModel):
+    periodo: str  # mes actual: "2026-04"
+    meta_ventas: float
+    meta_utilidad: Optional[float] = None
+    meta_cantidad: Optional[int] = None
+
+@app.get("/api/metas")
+def get_metas(request: Request):
+    user = get_current_user(request)
+    
+    # Get current month
+    now = datetime.now(timezone.utc)
+    periodo_actual = now.strftime("%Y-%m")
+    
+    meta = metas_col.find_one({"periodo": periodo_actual})
+    
+    # Calculate current progress
+    inicio_mes = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    
+    ventas_mes = list(ventas_col.aggregate([
+        {"$addFields": {"fecha_parsed": {"$dateFromString": {"dateString": "$fecha", "onError": None}}}},
+        {"$match": {"fecha_parsed": {"$gte": inicio_mes}}},
+        {"$group": {
+            "_id": None,
+            "total_ventas": {"$sum": "$total"},
+            "total_utilidad": {"$sum": "$utilidad"},
+            "cantidad": {"$sum": 1}
+        }}
+    ]))
+    
+    progreso = ventas_mes[0] if ventas_mes else {"total_ventas": 0, "total_utilidad": 0, "cantidad": 0}
+    
+    if meta:
+        return {
+            "periodo": periodo_actual,
+            "meta_ventas": meta.get("meta_ventas", 0),
+            "meta_utilidad": meta.get("meta_utilidad", 0),
+            "meta_cantidad": meta.get("meta_cantidad", 0),
+            "actual_ventas": progreso.get("total_ventas", 0),
+            "actual_utilidad": progreso.get("total_utilidad", 0),
+            "actual_cantidad": progreso.get("cantidad", 0),
+            "porcentaje_ventas": min(100, (progreso.get("total_ventas", 0) / meta.get("meta_ventas", 1)) * 100) if meta.get("meta_ventas", 0) > 0 else 0,
+            "porcentaje_utilidad": min(100, (progreso.get("total_utilidad", 0) / meta.get("meta_utilidad", 1)) * 100) if meta.get("meta_utilidad", 0) > 0 else 0,
+            "tiene_meta": True
+        }
+    
+    return {
+        "periodo": periodo_actual,
+        "meta_ventas": 0,
+        "meta_utilidad": 0,
+        "meta_cantidad": 0,
+        "actual_ventas": progreso.get("total_ventas", 0),
+        "actual_utilidad": progreso.get("total_utilidad", 0),
+        "actual_cantidad": progreso.get("cantidad", 0),
+        "porcentaje_ventas": 0,
+        "porcentaje_utilidad": 0,
+        "tiene_meta": False
+    }
+
+@app.post("/api/metas")
+def set_meta(request: Request, data: MetaVentas):
+    user = get_current_user(request)
+    
+    if user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Solo administradores pueden definir metas")
+    
+    meta_data = {
+        "periodo": data.periodo,
+        "meta_ventas": data.meta_ventas,
+        "meta_utilidad": data.meta_utilidad or 0,
+        "meta_cantidad": data.meta_cantidad or 0,
+        "created_by": user["id"],
+        "updated_at": datetime.now(timezone.utc).isoformat()
+    }
+    
+    metas_col.update_one(
+        {"periodo": data.periodo},
+        {"$set": meta_data},
+        upsert=True
+    )
+    
+    registrar_auditoria(user["id"], user["email"], "definir_meta", "metas",
+                        {"periodo": data.periodo, "meta_ventas": data.meta_ventas})
+    
+    return {"message": "Meta guardada"}
+
+@app.get("/api/metas/historial")
+def get_metas_historial(request: Request, limite: int = 12):
+    user = get_current_user(request)
+    
+    metas = list(metas_col.find({}).sort("periodo", -1).limit(limite))
+    
+    resultado = []
+    for meta in metas:
+        periodo = meta["periodo"]
+        
+        # Get actual sales for that period
+        ventas = list(ventas_col.aggregate([
+            {"$addFields": {"mes": {"$substr": ["$fecha", 0, 7]}}},
+            {"$match": {"mes": periodo}},
+            {"$group": {
+                "_id": None,
+                "total_ventas": {"$sum": "$total"},
+                "total_utilidad": {"$sum": "$utilidad"}
+            }}
+        ]))
+        
+        actual = ventas[0] if ventas else {"total_ventas": 0, "total_utilidad": 0}
+        
+        resultado.append({
+            "periodo": periodo,
+            "meta_ventas": meta.get("meta_ventas", 0),
+            "actual_ventas": actual.get("total_ventas", 0),
+            "cumplimiento": (actual.get("total_ventas", 0) / meta.get("meta_ventas", 1)) * 100 if meta.get("meta_ventas", 0) > 0 else 0
+        })
+    
+    return {"historial": resultado}
 
 # ============ ESTADÍSTICAS AVANZADAS ============
 @app.get("/api/estadisticas/ventas-por-periodo")
