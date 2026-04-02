@@ -1,0 +1,127 @@
+{
+  "project_info": {
+    "name": "PDS Gestión Integral",
+    "type": "Dashboard / Admin Panel",
+    "domain": "B2B Dental Supplies",
+    "brand_colors": {
+      "primary": "#E63946",
+      "text_on_primary": "#FFFFFF"
+    },
+    "logo_specs": "Red background (#E63946) with lowercase white text 'pds' featuring a stylized smile."
+  },
+  "theme_and_archetype": {
+    "theme": "LIGHT",
+    "archetype": "4 (Swiss & High-Contrast)",
+    "rationale": "For an ERP/Dashboard with high data density, the Swiss archetype provides authority, clarity, and a function-first approach. We mix it with the brand red for primary actions, keeping the rest monochrome to reduce cognitive load."
+  },
+  "typography": {
+    "headings": {
+      "family": "Work Sans, sans-serif",
+      "scale_rules": "Max text-4xl for main dashboard headers. Tightly tracked (tracking-tight) for large sizes. Avoid generic sans-serifs."
+    },
+    "body": {
+      "family": "IBM Plex Sans, sans-serif",
+      "scale_rules": "text-sm to text-base for standard data, ensuring high legibility in dense tables."
+    },
+    "labels": {
+      "style": "Uppercase, tiny (text-xs), wide spacing (tracking-[0.2em]), bold weight."
+    },
+    "font_urls": [
+      "https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=Work+Sans:wght@300;400;500;600;700&display=swap"
+    ]
+  },
+  "colors": {
+    "palette": {
+      "primary": "#E63946",
+      "primary_hover": "#D90429",
+      "background": "#F9FAFB",
+      "surface": "#FFFFFF",
+      "text_main": "#111827",
+      "text_muted": "#4B5563",
+      "border": "#E5E7EB",
+      "success": "#10B981",
+      "warning": "#F59E0B",
+      "danger": "#EF4444"
+    },
+    "css_variables_light": {
+      "--background": "210 20% 98%",
+      "--foreground": "222 47% 11%",
+      "--card": "0 0% 100%",
+      "--card-foreground": "222 47% 11%",
+      "--popover": "0 0% 100%",
+      "--popover-foreground": "222 47% 11%",
+      "--primary": "355 78% 59%",
+      "--primary-foreground": "0 0% 100%",
+      "--secondary": "210 40% 96%",
+      "--secondary-foreground": "222 47% 11%",
+      "--muted": "210 40% 96%",
+      "--muted-foreground": "215 16% 47%",
+      "--accent": "210 40% 96%",
+      "--accent-foreground": "222 47% 11%",
+      "--destructive": "0 84.2% 60.2%",
+      "--destructive-foreground": "210 40% 98%",
+      "--border": "214.3 31.8% 91.4%",
+      "--input": "214.3 31.8% 91.4%",
+      "--ring": "355 78% 59%",
+      "--radius": "0.375rem"
+    }
+  },
+  "layout_and_spacing": {
+    "grid_system": {
+      "type": "Control Room Grid",
+      "columns": "grid-cols-1 md:grid-cols-3 lg:grid-cols-4",
+      "gap": "gap-4 md:gap-6",
+      "rules": "Every pixel must be utilized. Use h-full on children. No jagged bottoms. Dense layout for data correlation."
+    },
+    "spacing_scale": {
+      "internal_padding": "p-6 or p-8 inside cards/containers to prevent text collision.",
+      "section_spacing": "py-8 or py-12 for distinct layout blocks."
+    },
+    "alignment": "Left-align paragraphs, inputs, labels, and tables. Optical alignment for icons inside buttons."
+  },
+  "component_strategy": {
+    "surfaces": "Grid Borders and Flat Technical Look. 1px border-border, no shadow. Hover states add slight lift (-translate-y-1) and shadow-lg.",
+    "buttons": "Sharp corners or subtle rounded-md. High contrast. Hover state must explicitly set background and text color.",
+    "navigation": "Sticky Header with Crystal Glassmorphism (bg-white/80 backdrop-blur-xl border-b border-border). DO NOT use completely transparent headers.",
+    "inputs_forms": "Shadcn based. Never use native inputs. Solid white backgrounds with 1px border.",
+    "tables": "Dense, striped rows or solid borders. IBM Plex Sans for tabular numbers.",
+    "modals": "Backdrop blur on overlay (bg-black/40 backdrop-blur-sm). Solid white container, p-6."
+  },
+  "interactive_and_motion": {
+    "hover_states": "Buttons hover to darker primary hue. Table rows hover to muted background.",
+    "focus_states": "High contrast ring matching primary color (focus:ring-2 focus:ring-primary).",
+    "transitions": "Use specific properties: transition: transform 0.2s ease, opacity 0.2s ease. No 'all' transitions."
+  },
+  "media_and_icons": {
+    "icon_library": "@phosphor-icons/react",
+    "icon_rationale": "Best for dense dashboards and developer tools, offering a clean, technical look.",
+    "images": [
+      {
+        "category": "login_background",
+        "url": "https://images.unsplash.com/photo-1629909613654-28e377c37b09?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NTYxODd8MHwxfHNlYXJjaHwxfHxkZW50aXN0JTIwY2xpbmljJTIwbW9kZXJufGVufDB8fHx8MTc3NTEwMzI3N3ww&ixlib=rb-4.1.0&q=85",
+        "description": "Modern, clean dentist clinic with white ceramic sinks and bright lighting."
+      },
+      {
+        "category": "empty_state_inventory",
+        "url": "https://images.pexels.com/photos/31837694/pexels-photo-31837694.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+        "description": "Flat lay of medical supplies, clean and organized, perfect for empty inventory states."
+      }
+    ],
+    "image_overlays": "Max bg-black/50 for dark overlay or bg-white/40 for light overlay over images to maintain text contrast."
+  },
+  "accessibility_and_testing": {
+    "contrast": "Ensure minimum 4.5:1 ratio for normal text. Use Text Shadow over images if needed.",
+    "testing_attributes": "All interactive elements MUST have data-testid (e.g., data-testid='submit-login-button').",
+    "motion": "Respect prefers-reduced-motion."
+  },
+  "instructions_to_main_agent": [
+    "Use Work Sans for headings and IBM Plex Sans for body text.",
+    "Implement a 'Control Room' dense grid for the dashboard. Use flat, white Shadcn cards with 1px borders, avoiding heavy shadows.",
+    "Update the Tailwind CSS variables in src/index.css to match the CSS variables provided in this JSON.",
+    "Build the navigation as a sticky header with glassmorphism (backdrop-blur-xl).",
+    "Ensure all interactive elements have a data-testid attribute.",
+    "Install and use @phosphor-icons/react for icons.",
+    "Do NOT use Space Grotesk. Do NOT use Teal colors.",
+    "Ensure the login screen or non-dashboard views utilize the provided dentist clinic image as a background with a clean white/glassmorphic form."
+  ]
+}
