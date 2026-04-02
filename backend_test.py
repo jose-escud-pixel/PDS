@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 PDS Backend API Testing Suite
-Tests all endpoints for the dental supplies management system
+Tests all endpoints for the dental supplies management system with JWT authentication
 """
 import requests
 import sys
@@ -15,8 +15,10 @@ class PDSAPITester:
         self.tests_passed = 0
         self.failed_tests = []
         self.test_data = {}
+        self.session = requests.Session()
+        self.admin_user = None
 
-    def run_test(self, name, method, endpoint, expected_status, data=None, params=None):
+    def run_test(self, name, method, endpoint, expected_status, data=None, params=None, auth_required=True):
         """Run a single API test"""
         url = f"{self.base_url}/{endpoint}"
         headers = {'Content-Type': 'application/json'}
@@ -27,13 +29,13 @@ class PDSAPITester:
         
         try:
             if method == 'GET':
-                response = requests.get(url, headers=headers, params=params, timeout=10)
+                response = self.session.get(url, headers=headers, params=params, timeout=10)
             elif method == 'POST':
-                response = requests.post(url, json=data, headers=headers, timeout=10)
+                response = self.session.post(url, json=data, headers=headers, timeout=10)
             elif method == 'PUT':
-                response = requests.put(url, json=data, headers=headers, timeout=10)
+                response = self.session.put(url, json=data, headers=headers, timeout=10)
             elif method == 'DELETE':
-                response = requests.delete(url, headers=headers, timeout=10)
+                response = self.session.delete(url, headers=headers, timeout=10)
 
             success = response.status_code == expected_status
             if success:
@@ -63,6 +65,293 @@ class PDSAPITester:
                 'error': str(e)
             })
             return False, {}
+
+    def test_login(self):
+        """Test login with admin credentials"""
+        login_data = {
+            "email": "andy.escudero",
+            "password": "secreto"
+        }
+        
+        success, data = self.run_test(
+            "Admin Login",
+            "POST",
+            "api/auth/login",
+            200,
+            data=login_data,
+            auth_required=False
+        )
+        
+        if success:
+            self.admin_user = data
+            print(f"   Logged in as: {data.get('email')} ({data.get('role')})")
+            
+            # Test invalid login
+            invalid_data = {
+                "email": "invalid@test.com",
+                "password": "wrongpassword"
+            }
+            
+            success, _ = self.run_test(
+                "Invalid Login",
+                "POST",
+                "api/auth/login",
+                401,
+                data=invalid_data,
+                auth_required=False
+            )
+        
+        return success
+
+    def test_auth_me(self):
+        """Test getting current user info"""
+        success, data = self.run_test(
+            "Get Current User",
+            "GET",
+            "api/auth/me",
+            200
+        )
+        
+        if success:
+            print(f"   User info: {data.get('email')} - {data.get('role')}")
+        
+        return success
+
+    def test_protected_access(self):
+        """Test protected endpoints without authentication"""
+        # Save current session
+        temp_session = self.session
+        self.session = requests.Session()  # New session without auth
+        
+        success, _ = self.run_test(
+            "Protected Access Without Auth",
+            "GET",
+            "api/dashboard",
+            401,
+            auth_required=False
+        )
+        
+        # Restore session
+        self.session = temp_session
+        return success
+
+    def test_usuarios_management(self):
+        """Test user management (admin only)"""
+        if not self.admin_user or self.admin_user.get('role') != 'admin':
+            print("   ⚠️  Skipping user management - not admin")
+            return True
+        
+        # Get usuarios
+        success, data = self.run_test(
+            "Get Usuarios",
+            "GET",
+            "api/usuarios",
+            200
+        )
+        if not success:
+            return False
+        
+        usuarios = data.get('usuarios', [])
+        print(f"   Found {len(usuarios)} usuarios")
+        
+        # Create test user
+        test_user = {
+            "email": f"testuser{datetime.now().strftime('%H%M%S')}@test.com",
+            "password": "testpass123",
+            "nombre": "Test User",
+            "role": "usuario",
+            "permisos": {
+                "dashboard": {"ver": True},
+                "productos": {"ver": True, "crear": False, "editar": False, "eliminar": False},
+                "ventas": {"ver": True, "crear": True, "editar": False, "eliminar": False}
+            }
+        }
+        
+        success, data = self.run_test(
+            "Create Usuario",
+            "POST",
+            "api/usuarios",
+            200,
+            data=test_user
+        )
+        
+        if success:
+            user_id = data.get('id')
+            self.test_data['test_user_id'] = user_id
+            
+            # Test update user
+            if user_id:
+                update_data = {
+                    "nombre": "Updated Test User",
+                    "role": "usuario"
+                }
+                success, _ = self.run_test(
+                    "Update Usuario",
+                    "PUT",
+                    f"api/usuarios/{user_id}",
+                    200,
+                    data=update_data
+                )
+                
+                # Test change password
+                if success:
+                    password_data = {"password": "newpassword123"}
+                    success, _ = self.run_test(
+                        "Change User Password",
+                        "PUT",
+                        f"api/usuarios/{user_id}/password",
+                        200,
+                        data=password_data
+                    )
+        
+        return success
+
+    def test_auditoria(self):
+        """Test audit system (admin only)"""
+        if not self.admin_user or self.admin_user.get('role') != 'admin':
+            print("   ⚠️  Skipping audit - not admin")
+            return True
+        
+        success, data = self.run_test(
+            "Get Auditoria",
+            "GET",
+            "api/auditoria",
+            200
+        )
+        
+        if success:
+            registros = data.get('registros', [])
+            print(f"   Found {len(registros)} audit records")
+            
+            # Test filtered audit
+            success, data = self.run_test(
+                "Get Auditoria Filtered",
+                "GET",
+                "api/auditoria",
+                200,
+                params={'modulo': 'auth'}
+            )
+        
+        return success
+
+    def test_stock_movimientos(self):
+        """Test stock movements"""
+        success, data = self.run_test(
+            "Get Stock Movimientos",
+            "GET",
+            "api/stock-movimientos",
+            200
+        )
+        
+        if success:
+            movimientos = data.get('movimientos', [])
+            print(f"   Found {len(movimientos)} stock movements")
+            
+            # Test stock adjustment if we have a product
+            producto_id = self.test_data.get('test_producto_id')
+            if producto_id:
+                ajuste_data = {
+                    "cantidad": 5,
+                    "motivo": "Test adjustment"
+                }
+                success, _ = self.run_test(
+                    "Ajustar Stock",
+                    "POST",
+                    f"api/productos/{producto_id}/ajuste-stock",
+                    200,
+                    data=ajuste_data
+                )
+        
+        return success
+
+    def test_reportes(self):
+        """Test reports and CSV exports"""
+        # Test ventas report
+        success, data = self.run_test(
+            "Reporte Ventas JSON",
+            "GET",
+            "api/reportes/ventas",
+            200
+        )
+        if not success:
+            return False
+        
+        # Test productos report
+        success, data = self.run_test(
+            "Reporte Productos JSON",
+            "GET",
+            "api/reportes/productos",
+            200
+        )
+        if not success:
+            return False
+        
+        # Test stock movements report
+        success, data = self.run_test(
+            "Reporte Stock Movimientos JSON",
+            "GET",
+            "api/reportes/stock-movimientos",
+            200
+        )
+        if not success:
+            return False
+        
+        # Test CSV exports (should return CSV content)
+        print("\n   Testing CSV exports...")
+        try:
+            # Ventas CSV
+            url = f"{self.base_url}/api/reportes/ventas?formato=csv"
+            response = self.session.get(url, timeout=10)
+            if response.status_code == 200 and 'text/csv' in response.headers.get('content-type', ''):
+                print("   ✅ Ventas CSV export working")
+            else:
+                print(f"   ❌ Ventas CSV failed: {response.status_code}")
+                success = False
+            
+            # Productos CSV
+            url = f"{self.base_url}/api/reportes/productos?formato=csv"
+            response = self.session.get(url, timeout=10)
+            if response.status_code == 200 and 'text/csv' in response.headers.get('content-type', ''):
+                print("   ✅ Productos CSV export working")
+            else:
+                print(f"   ❌ Productos CSV failed: {response.status_code}")
+                success = False
+            
+            # Stock movements CSV
+            url = f"{self.base_url}/api/reportes/stock-movimientos?formato=csv"
+            response = self.session.get(url, timeout=10)
+            if response.status_code == 200 and 'text/csv' in response.headers.get('content-type', ''):
+                print("   ✅ Stock movements CSV export working")
+            else:
+                print(f"   ❌ Stock movements CSV failed: {response.status_code}")
+                success = False
+                
+        except Exception as e:
+            print(f"   ❌ CSV export test failed: {str(e)}")
+            success = False
+        
+        return success
+
+    def test_logout(self):
+        """Test logout functionality"""
+        success, data = self.run_test(
+            "Logout",
+            "POST",
+            "api/auth/logout",
+            200
+        )
+        
+        if success:
+            # Test that we can't access protected endpoints after logout
+            success, _ = self.run_test(
+                "Access After Logout",
+                "GET",
+                "api/dashboard",
+                401,
+                auth_required=False
+            )
+        
+        return success
 
     def test_health_check(self):
         """Test health check endpoint"""
@@ -391,6 +680,15 @@ class PDSAPITester:
         """Clean up test data"""
         print("\n🧹 Cleaning up test data...")
         
+        # Delete test user
+        if 'test_user_id' in self.test_data:
+            self.run_test(
+                "Delete Test User",
+                "DELETE",
+                f"api/usuarios/{self.test_data['test_user_id']}",
+                200
+            )
+        
         # Delete test producto
         if 'test_producto_id' in self.test_data:
             self.run_test(
@@ -424,16 +722,24 @@ class PDSAPITester:
         print(f"   Base URL: {self.base_url}")
         print("=" * 50)
         
-        # Core tests
+        # Authentication and core tests
         tests = [
             self.test_health_check,
+            self.test_login,
+            self.test_auth_me,
+            self.test_protected_access,
             self.test_dashboard,
+            self.test_usuarios_management,
+            self.test_auditoria,
             self.test_productos_crud,
             self.test_clientes_crud,
             self.test_proveedores_crud,
             self.test_ventas_crud,
             self.test_compras_crud,
-            self.test_gastos_crud
+            self.test_gastos_crud,
+            self.test_stock_movimientos,
+            self.test_reportes,
+            self.test_logout
         ]
         
         for test in tests:
