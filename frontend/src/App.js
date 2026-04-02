@@ -7,7 +7,8 @@ import {
   SignOut, UserCircle, ShieldCheck, ClockCounterClockwise, FileText,
   Download, Lock, Eye, EyeSlash, UserGear, Gear, ChartLine, ChartBar,
   ChartPie, FilePdf, TrendUp, TrendDown, Target, Sliders, FloppyDisk,
-  ArrowsOutCardinal, Layout, Rows, SquaresFour
+  ArrowsOutCardinal, Layout, Rows, SquaresFour,
+  ShareNetwork, Globe, LockSimple, UsersThree, Copy, BookmarkSimple
 } from '@phosphor-icons/react';
 import {
   AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell, LineChart, Line,
@@ -55,6 +56,12 @@ const api = {
   getMetas: () => axios.get(`${API_URL}/api/metas`),
   setMeta: (d) => axios.post(`${API_URL}/api/metas`, d),
   getMetasHistorial: () => axios.get(`${API_URL}/api/metas/historial`),
+  getPlantillas: () => axios.get(`${API_URL}/api/plantillas`),
+  crearPlantilla: (d) => axios.post(`${API_URL}/api/plantillas`, d),
+  updatePlantilla: (id, d) => axios.put(`${API_URL}/api/plantillas/${id}`, d),
+  deletePlantilla: (id) => axios.delete(`${API_URL}/api/plantillas/${id}`),
+  aplicarPlantilla: (id) => axios.post(`${API_URL}/api/plantillas/${id}/aplicar`),
+  getUsuariosLista: () => axios.get(`${API_URL}/api/usuarios/lista`),
   getProductos: (p) => axios.get(`${API_URL}/api/productos`, { params: p }),
   createProducto: (d) => axios.post(`${API_URL}/api/productos`, d),
   updateProducto: (id, d) => axios.put(`${API_URL}/api/productos/${id}`, d),
@@ -464,6 +471,30 @@ const WIDGET_DEFINITIONS = {
   'alerta-stock': { label: 'Alertas de Stock', category: 'alert', minW: 6, minH: 2 },
 };
 
+// User Selector for sharing
+function UserSelector({ selectedUsers, onChange }) {
+  const [usuarios, setUsuarios] = useState([]);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => { api.getUsuariosLista().then(r => { setUsuarios(r.data.usuarios || []); setLoading(false); }).catch(() => setLoading(false)); }, []);
+  if (loading) return <p className="text-sm text-muted-foreground">Cargando usuarios...</p>;
+  if (usuarios.length === 0) return <p className="text-sm text-muted-foreground">No hay otros usuarios registrados</p>;
+  return (
+    <div className="space-y-2">
+      <label className="form-label">Seleccionar usuarios</label>
+      <div className="max-h-48 overflow-y-auto border border-border rounded-lg divide-y">
+        {usuarios.map(u => (
+          <label key={u.id} className="flex items-center gap-3 p-3 hover:bg-muted/50 cursor-pointer">
+            <input type="checkbox" checked={selectedUsers.includes(u.id)} onChange={(e) => {
+              onChange(e.target.checked ? [...selectedUsers, u.id] : selectedUsers.filter(id => id !== u.id));
+            }} />
+            <div><p className="text-sm font-medium">{u.nombre}</p><p className="text-xs text-muted-foreground">{u.email}</p></div>
+          </label>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // Dashboard View with Widgets
 function DashboardView({ user }) {
   const [dashboardData, setDashboardData] = useState(null);
@@ -476,13 +507,18 @@ function DashboardView({ user }) {
   const [editMode, setEditMode] = useState(false);
   const [showTemplateModal, setShowTemplateModal] = useState(false);
   const [showAddWidgetModal, setShowAddWidgetModal] = useState(false);
+  const [showSavePlantillaModal, setShowSavePlantillaModal] = useState(false);
+  const [showShareModal, setShowShareModal] = useState(null);
+  const [plantillas, setPlantillas] = useState([]);
+  const [usuariosLista, setUsuariosLista] = useState([]);
   const [saving, setSaving] = useState(false);
+  const [plantillaForm, setPlantillaForm] = useState({ nombre: '', descripcion: '', compartir: 'privada', usuarios_compartidos: [] });
 
   const isAdmin = user?.role === 'admin';
 
   const loadData = useCallback(async () => {
     try {
-      const [dashRes, templatesRes, configRes, ventasP, comprasP, prodVend, ventasC, stockCat, gastosCat, comprasProv, metasRes] = await Promise.all([
+      const [dashRes, templatesRes, configRes, ventasP, comprasP, prodVend, ventasC, stockCat, gastosCat, comprasProv, metasRes, plantillasRes] = await Promise.all([
         api.getDashboard(),
         api.getDashboardTemplates(),
         api.getDashboardConfig(),
@@ -493,12 +529,14 @@ function DashboardView({ user }) {
         api.getStockPorCategoria(),
         api.getGastosPorCategoria(),
         api.getComprasPorProveedor({ limite: 8 }),
-        api.getMetas()
+        api.getMetas(),
+        api.getPlantillas()
       ]);
 
       setDashboardData(dashRes.data);
       setTemplates(templatesRes.data.templates);
       setMetas(metasRes.data);
+      setPlantillas(plantillasRes.data.plantillas || []);
       setStats({
         ventasPeriodo: ventasP.data.data || [],
         comprasPeriodo: comprasP.data.data || [],
@@ -546,7 +584,68 @@ function DashboardView({ user }) {
       setCurrentTemplate(templateKey);
       setIsCustom(false);
       setShowTemplateModal(false);
+      // Auto-save
+      api.saveDashboardConfig({ template: templateKey, layout: template.widgets, custom: false });
     }
+  };
+
+  const handleSavePlantilla = async () => {
+    if (!plantillaForm.nombre.trim()) return alert('Ingrese un nombre');
+    setSaving(true);
+    try {
+      await api.crearPlantilla({
+        nombre: plantillaForm.nombre,
+        descripcion: plantillaForm.descripcion,
+        layout: layout,
+        compartir: plantillaForm.compartir,
+        usuarios_compartidos: plantillaForm.usuarios_compartidos
+      });
+      setShowSavePlantillaModal(false);
+      setPlantillaForm({ nombre: '', descripcion: '', compartir: 'privada', usuarios_compartidos: [] });
+      const res = await api.getPlantillas();
+      setPlantillas(res.data.plantillas || []);
+    } catch (e) { alert('Error al guardar plantilla'); }
+    finally { setSaving(false); }
+  };
+
+  const handleAplicarPlantilla = async (plantillaId) => {
+    try {
+      const res = await api.aplicarPlantilla(plantillaId);
+      setLayout(res.data.layout);
+      setCurrentTemplate('personalizado');
+      setIsCustom(true);
+      setShowTemplateModal(false);
+    } catch (e) { alert('Error al aplicar plantilla'); }
+  };
+
+  const handleDeletePlantilla = async (plantillaId) => {
+    if (!window.confirm('¿Eliminar esta plantilla?')) return;
+    try {
+      await api.deletePlantilla(plantillaId);
+      const res = await api.getPlantillas();
+      setPlantillas(res.data.plantillas || []);
+    } catch (e) { alert('Error al eliminar'); }
+  };
+
+  const openShareModal = async (plantilla) => {
+    setShowShareModal(plantilla);
+    try {
+      const res = await api.getUsuariosLista();
+      setUsuariosLista(res.data.usuarios || []);
+    } catch (e) { console.error(e); }
+  };
+
+  const handleUpdateShare = async () => {
+    if (!showShareModal) return;
+    try {
+      await api.updatePlantilla(showShareModal.id, {
+        compartir: showShareModal.compartir,
+        usuarios_compartidos: showShareModal.usuarios_compartidos || []
+      });
+      setShowShareModal(null);
+      const res = await api.getPlantillas();
+      setPlantillas(res.data.plantillas || []);
+    } catch (e) { alert('Error al actualizar'); }
   };
 
   const addWidget = (widgetId) => {
@@ -594,6 +693,18 @@ function DashboardView({ user }) {
   const widgetsInLayout = layout.map(l => l.i);
   const availableWidgets = Object.keys(WIDGET_DEFINITIONS).filter(w => !widgetsInLayout.includes(w));
 
+  const shareIcon = (compartir) => {
+    if (compartir === 'todos') return <Globe size={14} className="text-green-600" />;
+    if (compartir === 'usuarios') return <UsersThree size={14} className="text-blue-600" />;
+    return <LockSimple size={14} className="text-gray-500" />;
+  };
+
+  const shareLabel = (compartir) => {
+    if (compartir === 'todos') return 'Todos';
+    if (compartir === 'usuarios') return 'Usuarios';
+    return 'Privada';
+  };
+
   return (
     <div className="space-y-4" data-testid="dashboard-view">
       {/* Header */}
@@ -607,22 +718,25 @@ function DashboardView({ user }) {
         <div className="flex items-center gap-2">
           {editMode ? (
             <>
-              <button onClick={() => setShowAddWidgetModal(true)} className="flex items-center gap-2 px-3 py-2 border border-border rounded-md hover:bg-muted text-sm">
+              <button onClick={() => setShowAddWidgetModal(true)} className="flex items-center gap-2 px-3 py-2 border border-border rounded-md hover:bg-muted text-sm" data-testid="add-widget-btn">
                 <Plus size={16} /> Widget
               </button>
-              <button onClick={handleSaveLayout} disabled={saving} className="flex items-center gap-2 px-3 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 text-sm">
+              <button onClick={() => { setPlantillaForm({ nombre: '', descripcion: '', compartir: 'privada', usuarios_compartidos: [] }); setShowSavePlantillaModal(true); }} className="flex items-center gap-2 px-3 py-2 border border-blue-300 text-blue-700 rounded-md hover:bg-blue-50 text-sm" data-testid="save-as-template-btn">
+                <BookmarkSimple size={16} /> Guardar como Plantilla
+              </button>
+              <button onClick={handleSaveLayout} disabled={saving} className="flex items-center gap-2 px-3 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 text-sm" data-testid="save-layout-btn">
                 <FloppyDisk size={16} /> {saving ? 'Guardando...' : 'Guardar'}
               </button>
-              <button onClick={() => { setEditMode(false); loadData(); }} className="px-3 py-2 border border-border rounded-md hover:bg-muted text-sm">
+              <button onClick={() => { setEditMode(false); loadData(); }} className="px-3 py-2 border border-border rounded-md hover:bg-muted text-sm" data-testid="cancel-edit-btn">
                 Cancelar
               </button>
             </>
           ) : (
             <>
-              <button onClick={() => setShowTemplateModal(true)} className="flex items-center gap-2 px-3 py-2 border border-border rounded-md hover:bg-muted text-sm">
+              <button onClick={() => setShowTemplateModal(true)} className="flex items-center gap-2 px-3 py-2 border border-border rounded-md hover:bg-muted text-sm" data-testid="templates-btn">
                 <Layout size={16} /> Plantillas
               </button>
-              <button onClick={() => setEditMode(true)} className="flex items-center gap-2 px-3 py-2 bg-[#E63946] text-white rounded-md hover:bg-[#D90429] text-sm">
+              <button onClick={() => setEditMode(true)} className="flex items-center gap-2 px-3 py-2 bg-[#E63946] text-white rounded-md hover:bg-[#D90429] text-sm" data-testid="customize-btn">
                 <Sliders size={16} /> Personalizar
               </button>
             </>
@@ -633,7 +747,7 @@ function DashboardView({ user }) {
       {editMode && (
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-800">
           <ArrowsOutCardinal size={16} className="inline mr-2" />
-          <strong>Modo edición:</strong> Arrastra y redimensiona los widgets. Haz clic en la X para eliminar.
+          <strong>Modo edición:</strong> Arrastra y redimensiona los widgets. Haz clic en la X para eliminar. Usa "Guardar como Plantilla" para compartir tu layout.
         </div>
       )}
 
@@ -654,7 +768,7 @@ function DashboardView({ user }) {
             {editMode && (
               <>
                 <div className="widget-drag-handle absolute top-0 left-0 right-8 h-8 cursor-move z-10"></div>
-                <button onClick={() => removeWidget(item.i)} className="absolute top-1 right-1 z-20 p-1 bg-red-500 text-white rounded hover:bg-red-600">
+                <button onClick={() => removeWidget(item.i)} className="absolute top-1 right-1 z-20 p-1 bg-red-500 text-white rounded hover:bg-red-600" data-testid={`remove-widget-${item.i}`}>
                   <X size={12} />
                 </button>
               </>
@@ -664,27 +778,178 @@ function DashboardView({ user }) {
         ))}
       </GridLayout>
 
-      {/* Templates Modal */}
-      <Modal isOpen={showTemplateModal} onClose={() => setShowTemplateModal(false)} title="Seleccionar Plantilla" size="lg">
-        <div className="grid grid-cols-2 gap-4">
-          {Object.entries(templates).map(([key, template]) => (
-            <button
-              key={key}
-              onClick={() => applyTemplate(key)}
-              className={`p-4 border rounded-lg text-left hover:border-[#E63946] transition-colors ${currentTemplate === key && !isCustom ? 'border-[#E63946] bg-red-50' : 'border-border'}`}
-            >
-              <div className="flex items-center gap-2 mb-2">
-                {key === 'ejecutivo' && <House size={20} className="text-[#E63946]" />}
-                {key === 'ventas' && <ShoppingCart size={20} className="text-green-600" />}
-                {key === 'inventario' && <Package size={20} className="text-blue-600" />}
-                {key === 'analitico' && <ChartBar size={20} className="text-purple-600" />}
-                <span className="font-semibold">{template.nombre}</span>
+      {/* Templates Modal - Now includes shared templates */}
+      <Modal isOpen={showTemplateModal} onClose={() => setShowTemplateModal(false)} title="Plantillas de Dashboard" size="xl">
+        <div className="space-y-6">
+          {/* Predefined templates */}
+          <div>
+            <h4 className="font-semibold text-sm mb-3 text-muted-foreground uppercase tracking-wide">Plantillas del Sistema</h4>
+            <div className="grid grid-cols-2 gap-3">
+              {Object.entries(templates).map(([key, template]) => (
+                <button
+                  key={key}
+                  onClick={() => applyTemplate(key)}
+                  data-testid={`template-${key}`}
+                  className={`p-4 border rounded-lg text-left hover:border-[#E63946] transition-colors ${currentTemplate === key && !isCustom ? 'border-[#E63946] bg-red-50' : 'border-border'}`}
+                >
+                  <div className="flex items-center gap-2 mb-1">
+                    {key === 'ejecutivo' && <House size={18} className="text-[#E63946]" />}
+                    {key === 'ventas' && <ShoppingCart size={18} className="text-green-600" />}
+                    {key === 'inventario' && <Package size={18} className="text-blue-600" />}
+                    {key === 'analitico' && <ChartBar size={18} className="text-purple-600" />}
+                    <span className="font-semibold text-sm">{template.nombre}</span>
+                  </div>
+                  <p className="text-xs text-muted-foreground">{template.descripcion}</p>
+                  <p className="text-xs text-muted-foreground mt-1">{template.widgets.length} widgets</p>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Custom/Shared templates */}
+          {plantillas.length > 0 && (
+            <div>
+              <h4 className="font-semibold text-sm mb-3 text-muted-foreground uppercase tracking-wide">Plantillas Personalizadas</h4>
+              <div className="space-y-2">
+                {plantillas.map((p) => (
+                  <div key={p.id} className="flex items-center justify-between p-3 border border-border rounded-lg hover:bg-muted/50" data-testid={`plantilla-${p.id}`}>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium text-sm">{p.nombre}</span>
+                        <span className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-muted">
+                          {shareIcon(p.compartir)} {shareLabel(p.compartir)}
+                        </span>
+                        {!p.es_propia && <span className="text-xs text-muted-foreground">por {p.creador_nombre}</span>}
+                      </div>
+                      {p.descripcion && <p className="text-xs text-muted-foreground mt-0.5 truncate">{p.descripcion}</p>}
+                      <p className="text-xs text-muted-foreground">{p.widgets_count} widgets</p>
+                    </div>
+                    <div className="flex items-center gap-1 ml-3">
+                      <button onClick={() => handleAplicarPlantilla(p.id)} className="px-3 py-1.5 bg-[#E63946] text-white text-xs rounded-md hover:bg-[#D90429]" data-testid={`apply-plantilla-${p.id}`}>
+                        <Copy size={12} className="inline mr-1" /> Aplicar
+                      </button>
+                      {p.es_propia && (
+                        <>
+                          <button onClick={() => openShareModal({...p})} className="p-1.5 border border-border rounded-md hover:bg-blue-50 text-blue-600" data-testid={`share-plantilla-${p.id}`}>
+                            <ShareNetwork size={14} />
+                          </button>
+                          <button onClick={() => handleDeletePlantilla(p.id)} className="p-1.5 border border-border rounded-md hover:bg-red-50 text-red-600" data-testid={`delete-plantilla-${p.id}`}>
+                            <Trash size={14} />
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                ))}
               </div>
-              <p className="text-sm text-muted-foreground">{template.descripcion}</p>
-              <p className="text-xs text-muted-foreground mt-2">{template.widgets.length} widgets</p>
-            </button>
-          ))}
+            </div>
+          )}
         </div>
+      </Modal>
+
+      {/* Save as Template Modal */}
+      <Modal isOpen={showSavePlantillaModal} onClose={() => setShowSavePlantillaModal(false)} title="Guardar como Plantilla" size="md">
+        <div className="space-y-4">
+          <div className="form-group">
+            <label className="form-label">Nombre de la plantilla *</label>
+            <input type="text" value={plantillaForm.nombre} onChange={(e) => setPlantillaForm({...plantillaForm, nombre: e.target.value})} className="form-input" placeholder="Ej: Mi Dashboard de Ventas" data-testid="plantilla-nombre-input" />
+          </div>
+          <div className="form-group">
+            <label className="form-label">Descripción (opcional)</label>
+            <input type="text" value={plantillaForm.descripcion} onChange={(e) => setPlantillaForm({...plantillaForm, descripcion: e.target.value})} className="form-input" placeholder="Descripción breve..." data-testid="plantilla-desc-input" />
+          </div>
+          <div className="form-group">
+            <label className="form-label">Visibilidad</label>
+            <div className="space-y-2 mt-1">
+              {[
+                { value: 'privada', label: 'Privada', desc: 'Solo visible para ti', icon: LockSimple, color: 'text-gray-600' },
+                { value: 'usuarios', label: 'Usuarios específicos', desc: 'Compartir con usuarios seleccionados', icon: UsersThree, color: 'text-blue-600' },
+                { value: 'todos', label: 'Todos los usuarios', desc: 'Visible para todo el equipo', icon: Globe, color: 'text-green-600' },
+              ].map(opt => (
+                <label key={opt.value} className={`flex items-start gap-3 p-3 border rounded-lg cursor-pointer transition-colors ${plantillaForm.compartir === opt.value ? 'border-[#E63946] bg-red-50' : 'border-border hover:bg-muted/50'}`} data-testid={`share-option-${opt.value}`}>
+                  <input type="radio" name="compartir" value={opt.value} checked={plantillaForm.compartir === opt.value} onChange={(e) => setPlantillaForm({...plantillaForm, compartir: e.target.value, usuarios_compartidos: []})} className="mt-0.5" />
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2">
+                      <opt.icon size={16} className={opt.color} weight="duotone" />
+                      <span className="font-medium text-sm">{opt.label}</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-0.5">{opt.desc}</p>
+                  </div>
+                </label>
+              ))}
+            </div>
+          </div>
+          {plantillaForm.compartir === 'usuarios' && (
+            <UserSelector
+              selectedUsers={plantillaForm.usuarios_compartidos}
+              onChange={(ids) => setPlantillaForm({...plantillaForm, usuarios_compartidos: ids})}
+            />
+          )}
+          <div className="flex justify-end gap-3 pt-2">
+            <button onClick={() => setShowSavePlantillaModal(false)} className="px-4 py-2 border border-border rounded-md hover:bg-muted">Cancelar</button>
+            <button onClick={handleSavePlantilla} disabled={saving || !plantillaForm.nombre.trim()} className="bg-[#E63946] text-white px-4 py-2 rounded-md hover:bg-[#D90429] disabled:opacity-50" data-testid="save-plantilla-btn">
+              {saving ? 'Guardando...' : 'Guardar Plantilla'}
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Share Settings Modal */}
+      <Modal isOpen={!!showShareModal} onClose={() => setShowShareModal(null)} title={`Compartir: ${showShareModal?.nombre || ''}`} size="md">
+        {showShareModal && (
+          <div className="space-y-4">
+            <div className="form-group">
+              <label className="form-label">Visibilidad</label>
+              <div className="space-y-2 mt-1">
+                {[
+                  { value: 'privada', label: 'Privada', icon: LockSimple, color: 'text-gray-600' },
+                  { value: 'usuarios', label: 'Usuarios específicos', icon: UsersThree, color: 'text-blue-600' },
+                  { value: 'todos', label: 'Todos los usuarios', icon: Globe, color: 'text-green-600' },
+                ].map(opt => (
+                  <label key={opt.value} className={`flex items-center gap-3 p-3 border rounded-lg cursor-pointer ${showShareModal.compartir === opt.value ? 'border-[#E63946] bg-red-50' : 'border-border hover:bg-muted/50'}`}>
+                    <input type="radio" name="share-compartir" value={opt.value} checked={showShareModal.compartir === opt.value}
+                      onChange={(e) => setShowShareModal({...showShareModal, compartir: e.target.value, usuarios_compartidos: e.target.value === 'usuarios' ? showShareModal.usuarios_compartidos : []})} />
+                    <opt.icon size={16} className={opt.color} weight="duotone" />
+                    <span className="font-medium text-sm">{opt.label}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+            {showShareModal.compartir === 'usuarios' && (
+              <div className="space-y-2">
+                <label className="form-label">Seleccionar usuarios</label>
+                {usuariosLista.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No hay otros usuarios registrados</p>
+                ) : (
+                  <div className="max-h-48 overflow-y-auto border border-border rounded-lg divide-y">
+                    {usuariosLista.map(u => (
+                      <label key={u.id} className="flex items-center gap-3 p-3 hover:bg-muted/50 cursor-pointer">
+                        <input type="checkbox" checked={(showShareModal.usuarios_compartidos || []).includes(u.id)}
+                          onChange={(e) => {
+                            const ids = showShareModal.usuarios_compartidos || [];
+                            setShowShareModal({
+                              ...showShareModal,
+                              usuarios_compartidos: e.target.checked ? [...ids, u.id] : ids.filter(id => id !== u.id)
+                            });
+                          }} />
+                        <div>
+                          <p className="text-sm font-medium">{u.nombre}</p>
+                          <p className="text-xs text-muted-foreground">{u.email}</p>
+                        </div>
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+            <div className="flex justify-end gap-3 pt-2">
+              <button onClick={() => setShowShareModal(null)} className="px-4 py-2 border border-border rounded-md hover:bg-muted">Cancelar</button>
+              <button onClick={handleUpdateShare} className="bg-[#E63946] text-white px-4 py-2 rounded-md hover:bg-[#D90429]" data-testid="update-share-btn">
+                Guardar Cambios
+              </button>
+            </div>
+          </div>
+        )}
       </Modal>
 
       {/* Add Widget Modal */}
@@ -702,6 +967,7 @@ function DashboardView({ user }) {
                       key={widgetId}
                       onClick={() => addWidget(widgetId)}
                       className="p-3 border border-border rounded-lg hover:border-[#E63946] hover:bg-red-50 text-left"
+                      data-testid={`add-widget-option-${widgetId}`}
                     >
                       <span className="text-sm font-medium">{WIDGET_DEFINITIONS[widgetId].label}</span>
                     </button>

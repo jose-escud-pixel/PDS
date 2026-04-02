@@ -55,6 +55,7 @@ stock_movimientos_col = db["stock_movimientos"]
 login_attempts_col = db["login_attempts"]
 dashboard_config_col = db["dashboard_config"]
 metas_col = db["metas"]
+plantillas_col = db["plantillas"]
 
 # ============ PASSWORD & JWT ============
 def hash_password(password: str) -> str:
@@ -1577,6 +1578,140 @@ def get_metas_historial(request: Request, limite: int = 12):
         })
     
     return {"historial": resultado}
+
+# ============ PLANTILLAS COMPARTIDAS ============
+class PlantillaCreate(BaseModel):
+    nombre: str
+    descripcion: Optional[str] = ""
+    layout: list
+    compartir: str = "privada"  # privada, usuarios, todos
+    usuarios_compartidos: Optional[List[str]] = []
+
+class PlantillaUpdate(BaseModel):
+    nombre: Optional[str] = None
+    descripcion: Optional[str] = None
+    compartir: Optional[str] = None
+    usuarios_compartidos: Optional[List[str]] = None
+
+@app.get("/api/usuarios/lista")
+def get_usuarios_lista(request: Request):
+    user = get_current_user(request)
+    usuarios = list(usuarios_col.find({"activo": {"$ne": False}}, {"_id": 1, "email": 1, "nombre": 1}))
+    return {"usuarios": [{"id": str(u["_id"]), "email": u["email"], "nombre": u.get("nombre", u["email"])} for u in usuarios if str(u["_id"]) != user["id"]]}
+
+@app.post("/api/plantillas")
+def crear_plantilla(request: Request, data: PlantillaCreate):
+    user = get_current_user(request)
+    plantilla = {
+        "nombre": data.nombre.strip(),
+        "descripcion": data.descripcion or "",
+        "layout": data.layout,
+        "compartir": data.compartir,
+        "usuarios_compartidos": data.usuarios_compartidos or [],
+        "creador_id": user["id"],
+        "creador_nombre": user.get("nombre", user["email"]),
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "updated_at": datetime.now(timezone.utc).isoformat()
+    }
+    result = plantillas_col.insert_one(plantilla)
+    registrar_auditoria(user["id"], user["email"], "crear_plantilla", "plantillas",
+                        {"nombre": data.nombre, "compartir": data.compartir})
+    return {"message": "Plantilla creada", "id": str(result.inserted_id)}
+
+@app.get("/api/plantillas")
+def get_plantillas(request: Request):
+    user = get_current_user(request)
+    query = {"$or": [
+        {"creador_id": user["id"]},
+        {"compartir": "todos"},
+        {"$and": [{"compartir": "usuarios"}, {"usuarios_compartidos": user["id"]}]}
+    ]}
+    plantillas = list(plantillas_col.find(query).sort("created_at", -1))
+    resultado = []
+    for p in plantillas:
+        resultado.append({
+            "id": str(p["_id"]),
+            "nombre": p["nombre"],
+            "descripcion": p.get("descripcion", ""),
+            "layout": p["layout"],
+            "compartir": p.get("compartir", "privada"),
+            "usuarios_compartidos": p.get("usuarios_compartidos", []),
+            "creador_id": p["creador_id"],
+            "creador_nombre": p.get("creador_nombre", ""),
+            "es_propia": p["creador_id"] == user["id"],
+            "widgets_count": len(p["layout"]),
+            "created_at": p.get("created_at", ""),
+            "updated_at": p.get("updated_at", "")
+        })
+    return {"plantillas": resultado}
+
+@app.put("/api/plantillas/{plantilla_id}")
+def update_plantilla(request: Request, plantilla_id: str, data: PlantillaUpdate):
+    user = get_current_user(request)
+    plantilla = plantillas_col.find_one({"_id": ObjectId(plantilla_id)})
+    if not plantilla:
+        raise HTTPException(status_code=404, detail="Plantilla no encontrada")
+    if plantilla["creador_id"] != user["id"]:
+        raise HTTPException(status_code=403, detail="Solo el creador puede editar esta plantilla")
+    update_data = {"updated_at": datetime.now(timezone.utc).isoformat()}
+    if data.nombre is not None:
+        update_data["nombre"] = data.nombre.strip()
+    if data.descripcion is not None:
+        update_data["descripcion"] = data.descripcion
+    if data.compartir is not None:
+        update_data["compartir"] = data.compartir
+    if data.usuarios_compartidos is not None:
+        update_data["usuarios_compartidos"] = data.usuarios_compartidos
+    plantillas_col.update_one({"_id": ObjectId(plantilla_id)}, {"$set": update_data})
+    registrar_auditoria(user["id"], user["email"], "actualizar_plantilla", "plantillas",
+                        {"plantilla_id": plantilla_id, "cambios": list(update_data.keys())})
+    return {"message": "Plantilla actualizada"}
+
+@app.delete("/api/plantillas/{plantilla_id}")
+def delete_plantilla(request: Request, plantilla_id: str):
+    user = get_current_user(request)
+    plantilla = plantillas_col.find_one({"_id": ObjectId(plantilla_id)})
+    if not plantilla:
+        raise HTTPException(status_code=404, detail="Plantilla no encontrada")
+    if plantilla["creador_id"] != user["id"]:
+        raise HTTPException(status_code=403, detail="Solo el creador puede eliminar esta plantilla")
+    plantillas_col.delete_one({"_id": ObjectId(plantilla_id)})
+    registrar_auditoria(user["id"], user["email"], "eliminar_plantilla", "plantillas",
+                        {"plantilla_id": plantilla_id, "nombre": plantilla["nombre"]})
+    return {"message": "Plantilla eliminada"}
+
+@app.post("/api/plantillas/{plantilla_id}/aplicar")
+def aplicar_plantilla(request: Request, plantilla_id: str):
+    user = get_current_user(request)
+    plantilla = plantillas_col.find_one({"_id": ObjectId(plantilla_id)})
+    if not plantilla:
+        raise HTTPException(status_code=404, detail="Plantilla no encontrada")
+    # Check access
+    tiene_acceso = (
+        plantilla["creador_id"] == user["id"] or
+        plantilla.get("compartir") == "todos" or
+        (plantilla.get("compartir") == "usuarios" and user["id"] in plantilla.get("usuarios_compartidos", []))
+    )
+    if not tiene_acceso:
+        raise HTTPException(status_code=403, detail="No tiene acceso a esta plantilla")
+    # Apply: copy layout to user's dashboard config
+    config_data = {
+        "usuario_id": user["id"],
+        "template": "personalizado",
+        "layout": plantilla["layout"],
+        "custom": True,
+        "plantilla_origen": str(plantilla["_id"]),
+        "plantilla_nombre": plantilla["nombre"],
+        "updated_at": datetime.now(timezone.utc).isoformat()
+    }
+    dashboard_config_col.update_one(
+        {"usuario_id": user["id"]},
+        {"$set": config_data},
+        upsert=True
+    )
+    registrar_auditoria(user["id"], user["email"], "aplicar_plantilla", "plantillas",
+                        {"plantilla_id": plantilla_id, "nombre": plantilla["nombre"]})
+    return {"message": f"Plantilla '{plantilla['nombre']}' aplicada", "layout": plantilla["layout"]}
 
 # ============ ESTADÍSTICAS AVANZADAS ============
 @app.get("/api/estadisticas/ventas-por-periodo")
