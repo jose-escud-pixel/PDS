@@ -1,59 +1,69 @@
 # PDS - Sistema de Gestión Integral para Insumos Odontológicos
 
 ## Problema Original
-Sistema de gestión comercial para empresa paraguaya (PDS) de distribución de insumos odontológicos. Reemplaza uso de Excel. Incluye control de stock, compras, ventas, clientes, proveedores y gastos.
+Sistema completo de gestión comercial para empresa paraguaya (PDS) de distribución de insumos odontológicos. Incluye autenticación, roles, permisos, auditoría, control de stock, compras, ventas, clientes, proveedores, gastos y reportes.
 
 ## Arquitectura
 - **Frontend**: React 19 + Tailwind CSS + Phosphor Icons
-- **Backend**: FastAPI (Python) - Puerto 8001
+- **Backend**: FastAPI (Python) con JWT Auth + bcrypt
 - **Base de datos**: MongoDB (pds_database)
-- **Puerto Apache**: 8004 (libre según configuración del usuario)
+- **Puerto Apache**: 8004
 
 ## User Personas
-1. **Administrador PDS**: Gestión completa del sistema
-2. **Usuario Operativo**: Registro de ventas, compras, consultas
+1. **Administrador (andy.escudero)**: Gestión total del sistema, usuarios, auditoría
+2. **Usuario Operativo**: Permisos modulares configurables por el admin
 
-## Core Requirements (Estáticos)
-- Dashboard con indicadores de ventas/compras/utilidad/stock
-- CRUD de productos con control de stock
-- Registro de ventas con descuento automático de inventario
-- Registro de compras con actualización de stock
-- Gestión de clientes (odontólogos, clínicas)
-- Gestión de proveedores
-- Registro de gastos operativos
+## Core Requirements
+- [x] Sistema de autenticación JWT
+- [x] Roles (admin/usuario) con permisos modulares
+- [x] Dashboard con indicadores
+- [x] CRUD de productos con control de stock
+- [x] Ventas con cálculo de utilidad
+- [x] Compras con actualización de stock
+- [x] Clientes y proveedores
+- [x] Gastos operativos
+- [x] Historial de movimientos de stock
+- [x] Auditoría del sistema
+- [x] Reportes exportables (CSV)
 
 ## What's Been Implemented
 **[2026-04-02]**
-- Dashboard completo con estadísticas
-- Gestión de productos (285 productos cargados)
-- Gestión de ventas con validación de stock
-- Gestión de compras con actualización de costos
-- Gestión de clientes (6 clientes)
-- Gestión de proveedores (6 proveedores)
-- Gestión de gastos operativos
-- Seed de datos desde Excel
-- Logo PDS rojo (#E63946) integrado
+- MVP inicial con 285 productos
+- Autenticación JWT + bcrypt
+- Sistema de roles y permisos modulares
+- Admin: andy.escudero / secreto
+- Auditoría de todas las acciones
+- Historial de movimientos de stock
+- Exportación de reportes a CSV
+- Ajuste manual de stock con motivo
 
-## Prioritized Backlog
+## Permisos Modulares
+| Módulo | Acciones |
+|--------|----------|
+| Dashboard | Ver |
+| Productos | Ver, Crear, Editar, Eliminar |
+| Ventas | Ver, Crear, Editar, Eliminar |
+| Compras | Ver, Crear, Editar, Eliminar |
+| Clientes | Ver, Crear, Editar, Eliminar |
+| Proveedores | Ver, Crear, Editar, Eliminar |
+| Gastos | Ver, Crear, Editar, Eliminar |
+| Reportes | Ver |
+| Auditoría | Ver (solo admin) |
+| Usuarios | Ver, Crear, Editar, Eliminar (solo admin) |
 
-### P0 (Crítico)
-- ✅ Dashboard con indicadores
-- ✅ CRUD productos
-- ✅ Ventas con descuento de stock
-- ✅ Compras con actualización de stock
+## Backlog
 
 ### P1 (Alta)
-- Sistema de login/autenticación
-- Reportes exportables (Excel/PDF)
-- Historial de movimientos de stock
+- Exportación a PDF
+- Gráficos de tendencias en dashboard
+- Filtros avanzados en reportes
 
 ### P2 (Media)
-- Roles y permisos múltiples
-- Auditoría de cambios
+- Recuperación de contraseña
+- Notificaciones de bajo stock
 - Bancos/Tesorería
-- Cuentas por cobrar/pagar
 
 ## Next Tasks
-1. Implementar autenticación (login/registro)
-2. Agregar reportes de ventas por período
-3. Agregar historial de precios por producto
+1. Agregar gráficos de ventas mensuales
+2. Implementar exportación a PDF
+3. Agregar filtros por fecha en todas las vistas
