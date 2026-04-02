@@ -33,7 +33,7 @@ Crear un sistema web de gestión de ventas e inventario para insumos odontológi
 - Resumen general con utilidad neta
 - Exportación CSV de ventas, inventario, movimientos de stock
 
-### Fase 4 - Dashboard Personalizable (COMPLETADO - Verificado 2026-04-02)
+### Fase 4 - Dashboard Personalizable (COMPLETADO - 2026-04-02)
 - Grid drag-and-drop con react-grid-layout
 - 4 plantillas predefinidas: Ejecutivo, Ventas, Inventario, Analítico
 - 19 widgets disponibles: stat cards, gráficos, tablas, alertas, metas
@@ -41,22 +41,37 @@ Crear un sistema web de gestión de ventas e inventario para insumos odontológi
 - Guardado de configuración por usuario en MongoDB
 - Widget de Metas de Ventas mensuales con barra de progreso
 
-## Endpoints API Principales
+### Fase 5 - Plantillas Compartidas (COMPLETADO - 2026-04-02)
+- Guardar layout actual como plantilla con nombre y descripción
+- 3 niveles de visibilidad: Privada, Usuarios específicos, Todos
+- Selector de usuarios para compartir con personas específicas
+- Aplicar plantilla compartida crea una COPIA (original no cambia)
+- Solo el creador puede editar/eliminar su plantilla
+- Modal de plantillas con 2 secciones: Sistema y Personalizadas
+- Botones de Aplicar, Compartir, Eliminar en cada plantilla propia
+
+## Endpoints API
 - Auth: POST /api/auth/login, POST /api/auth/logout, GET /api/auth/me, POST /api/auth/refresh
 - Dashboard: GET /api/dashboard, GET /api/dashboard/config, POST /api/dashboard/config, GET /api/dashboard/templates
 - Metas: GET /api/metas, POST /api/metas, GET /api/metas/historial
+- Plantillas: GET/POST /api/plantillas, PUT/DELETE /api/plantillas/{id}, POST /api/plantillas/{id}/aplicar
+- Usuarios: GET /api/usuarios, GET /api/usuarios/lista
 - CRUD: /api/productos, /api/clientes, /api/proveedores, /api/ventas, /api/compras, /api/gastos
-- Estadísticas: /api/estadisticas/ventas-por-periodo, compras-por-periodo, etc.
-- Admin: /api/usuarios, /api/auditoria, /api/stock-movimientos
+- Estadísticas: /api/estadisticas/* (ventas-por-periodo, compras-por-periodo, etc.)
 - Reportes: /api/reportes/ventas, /api/reportes/productos, /api/reportes/stock-movimientos
 
 ## Arquitectura de Archivos
-- `/app/backend/server.py` - Backend completo (1864 líneas)
-- `/app/frontend/src/App.js` - Frontend monolítico (862 líneas)
+- `/app/backend/server.py` - Backend completo (~1980 líneas)
+- `/app/frontend/src/App.js` - Frontend monolítico (~1000 líneas)
 - `/app/frontend/src/App.css` - Estilos
-- `/app/backend/tests/test_dashboard_metas.py` - Tests del dashboard
+- `/app/backend/tests/` - Tests pytest
+
+## DB Collections
+- usuarios, productos, clientes, proveedores, ventas, compras, gastos
+- auditoria, stock_movimientos, login_attempts
+- dashboard_config, metas, plantillas
 
 ## Backlog / Tareas Futuras
-- **P1**: Refactorizar App.js en componentes más pequeños (Dashboard, Stats, etc.)
-- **P2**: Verificar exportación PDF con layouts personalizados del dashboard
-- **P2**: Agregar más opciones de exportación (Excel con formato)
+- **P1**: Refactorizar App.js en componentes más pequeños
+- **P2**: Verificar exportación PDF con layouts personalizados
+- **P2**: Más opciones de exportación (Excel con formato)
