@@ -148,14 +148,18 @@ def registrar_auditoria(usuario_id: str, usuario_email: str, accion: str, modulo
 # ============ STOCK MOVEMENTS ============
 def registrar_movimiento_stock(producto_id: str, producto_nombre: str, tipo: str, cantidad: int, 
                                 referencia_id: str = None, referencia_tipo: str = None, 
-                                usuario_id: str = None, usuario_email: str = None, stock_anterior: int = 0):
+                                usuario_id: str = None, usuario_email: str = None, stock_anterior: int = 0,
+                                variante: str = None, costo_unitario: float = 0, valor_movimiento: float = 0):
     stock_movimientos_col.insert_one({
         "producto_id": producto_id,
         "producto_nombre": producto_nombre,
+        "variante": variante,
         "tipo": tipo,  # entrada, salida, ajuste
         "cantidad": cantidad,
         "stock_anterior": stock_anterior,
         "stock_nuevo": stock_anterior + cantidad if tipo == "entrada" else stock_anterior - cantidad,
+        "costo_unitario": costo_unitario,
+        "valor_movimiento": valor_movimiento,
         "referencia_id": referencia_id,
         "referencia_tipo": referencia_tipo,  # venta, compra, ajuste
         "usuario_id": usuario_id,
@@ -206,6 +210,7 @@ class ProductoUpdate(BaseModel):
     stock: Optional[int] = None
     stock_minimo: Optional[int] = None
     margen: Optional[int] = None
+    utilidad_esperada: Optional[int] = None
     activo: Optional[bool] = None
 
 class AjusteStock(BaseModel):
@@ -256,18 +261,46 @@ class CompraItem(BaseModel):
 class CompraBase(BaseModel):
     proveedor_id: str
     proveedor_nombre: str
-    factura: Optional[str] = ""
     fecha: Optional[str] = None
+    factura: Optional[str] = ""
     items: List[CompraItem]
     observaciones: Optional[str] = ""
 
 class GastoBase(BaseModel):
-    fecha: str
+    fecha: Optional[str] = None
     categoria: str
     descripcion: str
+    proveedor_id: Optional[str] = None
+    proveedor_nombre: Optional[str] = None
     monto: float
-    iva_pct: int = 10
-    proveedor: Optional[str] = ""
+    observaciones: Optional[str] = None
+    comprobante_url: Optional[str] = None
+
+
+
+class VentaUpdate(BaseModel):
+    cliente_id: Optional[str] = None
+    cliente_nombre: Optional[str] = None
+    fecha: Optional[str] = None
+    observaciones: Optional[str] = None
+    items: Optional[list] = None
+
+class CompraUpdate(BaseModel):
+    proveedor_id: Optional[str] = None
+    proveedor_nombre: Optional[str] = None
+    fecha: Optional[str] = None
+    numero_factura: Optional[str] = None
+    observaciones: Optional[str] = None
+    items: Optional[list] = None
+
+class GastoUpdate(BaseModel):
+    fecha: Optional[str] = None
+    categoria: Optional[str] = None
+    descripcion: Optional[str] = None
+    proveedor_id: Optional[str] = None
+    proveedor_nombre: Optional[str] = None
+    monto: Optional[float] = None
+    observaciones: Optional[str] = None
 
 def serialize_doc(doc):
     if doc is None:
@@ -485,6 +518,9 @@ def update_usuario(request: Request, usuario_id: str, data: UsuarioUpdate):
         raise HTTPException(status_code=400, detail="ID inválido")
     
     update_data = {k: v for k, v in data.model_dump().items() if v is not None}
+    # Map utilidad_esperada to margen
+    if "utilidad_esperada" in update_data:
+        update_data["margen"] = update_data.pop("utilidad_esperada")
     if not update_data:
         raise HTTPException(status_code=400, detail="No hay datos para actualizar")
     
@@ -869,16 +905,104 @@ def get_categorias(request: Request):
 @app.get("/api/clientes")
 def get_clientes(request: Request, search: Optional[str] = None):
     user = get_current_user(request)
-    
+
     query = {"activo": True}
     if search:
         query["$or"] = [
-            {"nombre": {"$regex": search, "$options": "i"}},
-            {"telefono": {"$regex": search, "$options": "i"}}
+            {"nombre":   {"$regex": search, "$options": "i"}},
+            {"ruc":      {"$regex": search, "$options": "i"}},
+            {"ciudad":   {"$regex": search, "$options": "i"}},
+            {"telefono": {"$regex": search, "$options": "i"}},
         ]
-    
+
     clientes = list(clientes_col.find(query))
+
+    for cliente in clientes:
+        cliente_id = str(cliente["_id"])
+
+        # Última venta
+        ultima_venta = ventas_col.find_one({"cliente_id": cliente_id}, sort=[("fecha", -1)])
+
+        cliente["ultima_venta_fecha"] = ultima_venta.get("fecha") if ultima_venta else None
+        cliente["ultima_venta_monto"] = float(ultima_venta.get("total") or 0) if ultima_venta else 0
+
+        # Último producto comprado
+        if ultima_venta:
+            items = ultima_venta.get("items", [])
+            if items:
+                nombre = items[0].get("nombre", "")
+                variante = items[0].get("variante", "")
+                label = f"{nombre}{' | ' + variante if variante else ''}"
+                if len(items) > 1:
+                    label += f" +{len(items) - 1} más"
+                cliente["ultimo_producto"] = label
+            else:
+                cliente["ultimo_producto"] = ""
+        else:
+            cliente["ultimo_producto"] = ""
+
+        # Totales: un solo aggregate para no hacer N queries
+        pipeline = [
+            {"$match": {"cliente_id": cliente_id}},
+            {"$group": {
+                "_id": None,
+                "total_comprado":   {"$sum": "$total"},
+                "cantidad_compras": {"$sum": 1},
+            }}
+        ]
+        agg = list(ventas_col.aggregate(pipeline))
+        if agg:
+            cliente["total_comprado"]   = float(agg[0].get("total_comprado") or 0)
+            cliente["cantidad_compras"] = int(agg[0].get("cantidad_compras") or 0)
+        else:
+            cliente["total_comprado"]   = 0
+            cliente["cantidad_compras"] = 0
+
     return {"clientes": serialize_docs(clientes)}
+
+
+@app.get("/api/clientes/{cliente_id}/ventas")
+def get_cliente_ventas(
+    request: Request,
+    cliente_id: str,
+    fecha_desde:  Optional[str]   = None,
+    fecha_hasta:  Optional[str]   = None,
+    total_min:    Optional[float] = None,
+    ciudad:       Optional[str]   = None,
+    tipo:         Optional[str]   = None,
+):
+    user = get_current_user(request)
+
+    query: dict = {"cliente_id": cliente_id}
+    if fecha_desde:
+        query.setdefault("fecha", {})["$gte"] = fecha_desde
+    if fecha_hasta:
+        query.setdefault("fecha", {})["$lte"] = fecha_hasta + "T23:59:59"
+    if total_min is not None:
+        query["total"] = {"$gte": total_min}
+
+    ventas = list(ventas_col.find(query).sort("fecha", -1))
+
+    # Filtros de datos del cliente (ciudad/tipo no están en ventas, son del cliente)
+    if ciudad or tipo:
+        try:
+            cliente_doc = clientes_col.find_one({"_id": ObjectId(cliente_id)})
+        except Exception:
+            cliente_doc = None
+        if cliente_doc:
+            if ciudad and ciudad.lower() not in (cliente_doc.get("ciudad") or "").lower():
+                ventas = []
+            if tipo and tipo != cliente_doc.get("tipo", ""):
+                ventas = []
+
+    total_comprado    = sum(float(v.get("total") or 0) for v in ventas)
+    cantidad_ventas   = len(ventas)
+
+    return {
+        "cantidad_ventas": cantidad_ventas,
+        "total_comprado":  round(total_comprado, 2),
+        "ventas":          serialize_docs(ventas),
+    }
 
 @app.post("/api/clientes")
 def create_cliente(request: Request, cliente: ClienteBase):
@@ -943,13 +1067,73 @@ def delete_cliente(request: Request, cliente_id: str):
 @app.get("/api/proveedores")
 def get_proveedores(request: Request, search: Optional[str] = None):
     user = get_current_user(request)
-    
+
     query = {"activo": True}
     if search:
-        query["nombre"] = {"$regex": search, "$options": "i"}
-    
+        query["$or"] = [
+            {"nombre": {"$regex": search, "$options": "i"}},
+            {"contacto": {"$regex": search, "$options": "i"}},
+            {"ruc": {"$regex": search, "$options": "i"}},
+        ]
+
     proveedores = list(proveedores_col.find(query))
-    return {"proveedores": serialize_docs(proveedores)}
+
+    # Enriquecer con datos comerciales desde compras
+    result = []
+    for p in proveedores:
+        pid = str(p["_id"])
+        compras = list(compras_col.find({"proveedor_id": pid}).sort("fecha", -1))
+        cantidad_compras = len(compras)
+        total_comprado = sum(float(c.get("total") or 0) for c in compras)
+        ultima_compra = None
+        monto_ultima_compra = 0
+        if compras:
+            ultima = compras[0]
+            ultima_compra = ultima.get("fecha", "")
+            monto_ultima_compra = float(ultima.get("total") or 0)
+
+        doc = serialize_doc(p)
+        doc["cantidad_compras"]    = cantidad_compras
+        doc["total_comprado"]      = round(total_comprado, 2)
+        doc["ultima_compra"]       = ultima_compra
+        doc["monto_ultima_compra"] = round(monto_ultima_compra, 2)
+        result.append(doc)
+
+    return {"proveedores": result}
+
+
+@app.get("/api/proveedores/{proveedor_id}/compras")
+def get_proveedor_compras(
+    request: Request,
+    proveedor_id: str,
+    fecha_desde: Optional[str] = None,
+    fecha_hasta: Optional[str] = None,
+    total_min: Optional[float] = None,
+    cantidad_min: Optional[int] = None,
+):
+    user = get_current_user(request)
+
+    query: dict = {"proveedor_id": proveedor_id}
+    if fecha_desde:
+        query.setdefault("fecha", {})["$gte"] = fecha_desde
+    if fecha_hasta:
+        query.setdefault("fecha", {})["$lte"] = fecha_hasta + "T23:59:59"
+    if total_min is not None:
+        query["total"] = {"$gte": total_min}
+
+    compras = list(compras_col.find(query).sort("fecha", -1))
+
+    # Filtro cantidad de ítems (no indexable directamente)
+    if cantidad_min is not None:
+        compras = [c for c in compras if len(c.get("items", [])) >= cantidad_min]
+
+    total_comprado = sum(float(c.get("total") or 0) for c in compras)
+
+    return {
+        "cantidad_compras": len(compras),
+        "total_comprado": round(total_comprado, 2),
+        "compras": serialize_docs(compras),
+    }
 
 @app.post("/api/proveedores")
 def create_proveedor(request: Request, proveedor: ProveedorBase):
@@ -1079,7 +1263,7 @@ def create_venta(request: Request, venta: VentaBase):
         "total_iva": total_iva,
         "utilidad": total - total_costo,
         "observaciones": venta.observaciones,
-        "fecha": venta.fecha or datetime.now(timezone.utc).isoformat(),
+        "fecha": venta.fecha if venta.fecha else datetime.now(timezone.utc).isoformat(),
         "created_at": datetime.now(timezone.utc).isoformat(),
         "created_by": user["id"],
         "vendedor": user["email"]
@@ -1127,131 +1311,6 @@ def create_venta(request: Request, venta: VentaBase):
         "utilidad": total - total_costo
     }
 
-@app.put("/api/ventas/{venta_id}")
-def update_venta(request: Request, venta_id: str, venta: VentaBase):
-    user = get_current_user(request)
-    if not check_permission(user, "ventas", "editar"):
-        raise HTTPException(status_code=403, detail="Sin permiso para editar ventas")
-
-    existing = ventas_col.find_one({"_id": ObjectId(venta_id)})
-    if not existing:
-        raise HTTPException(status_code=404, detail="Venta no encontrada")
-
-    # Revertir stock de items anteriores
-    for item in existing.get("items", []):
-        producto = productos_col.find_one({"_id": ObjectId(item["producto_id"])})
-        if producto:
-            stock_anterior = producto.get("stock", 0)
-            productos_col.update_one(
-                {"_id": ObjectId(item["producto_id"])},
-                {"$inc": {"stock": item["cantidad"]}}
-            )
-            registrar_movimiento_stock(
-                producto_id=item["producto_id"],
-                producto_nombre=item["nombre"],
-                tipo="entrada",
-                cantidad=item["cantidad"],
-                referencia_id=venta_id,
-                referencia_tipo="venta_reversion",
-                usuario_id=user["id"],
-                usuario_email=user["email"],
-                stock_anterior=stock_anterior
-            )
-
-    # Validar stock nuevo y calcular totales
-    total = 0
-    total_costo = 0
-    total_iva = 0
-    for item in venta.items:
-        producto = productos_col.find_one({"_id": ObjectId(item.producto_id)})
-        if not producto:
-            raise HTTPException(status_code=404, detail=f"Producto no encontrado: {item.nombre}")
-        if producto.get("stock", 0) < item.cantidad:
-            raise HTTPException(status_code=400, detail=f"Stock insuficiente para {item.nombre}. Disponible: {producto.get('stock', 0)}")
-        subtotal = item.cantidad * item.precio_unitario
-        iva = subtotal * item.iva_pct / (100 + item.iva_pct)
-        total += subtotal
-        total_costo += item.cantidad * item.costo_unitario
-        total_iva += iva
-
-    fecha = venta.fecha or existing.get("fecha", datetime.now(timezone.utc).isoformat())
-
-    ventas_col.update_one(
-        {"_id": ObjectId(venta_id)},
-        {"$set": {
-            "cliente_id": venta.cliente_id,
-            "cliente_nombre": venta.cliente_nombre,
-            "items": [item.model_dump() for item in venta.items],
-            "total": total,
-            "total_costo": total_costo,
-            "total_iva": total_iva,
-            "utilidad": total - total_costo,
-            "observaciones": venta.observaciones,
-            "fecha": fecha,
-            "updated_at": datetime.now(timezone.utc).isoformat(),
-            "updated_by": user["id"]
-        }}
-    )
-
-    # Descontar stock nuevo
-    for item in venta.items:
-        producto = productos_col.find_one({"_id": ObjectId(item.producto_id)})
-        stock_anterior = producto.get("stock", 0) if producto else 0
-        productos_col.update_one(
-            {"_id": ObjectId(item.producto_id)},
-            {"$inc": {"stock": -item.cantidad}}
-        )
-        registrar_movimiento_stock(
-            producto_id=item.producto_id,
-            producto_nombre=item.nombre,
-            tipo="salida",
-            cantidad=item.cantidad,
-            referencia_id=venta_id,
-            referencia_tipo="venta",
-            usuario_id=user["id"],
-            usuario_email=user["email"],
-            stock_anterior=stock_anterior
-        )
-
-    registrar_auditoria(user["id"], user["email"], "editar", "ventas",
-                        {"venta_id": venta_id, "total": total, "utilidad": total - total_costo})
-    return {"message": "Venta actualizada", "total": total, "utilidad": total - total_costo}
-
-@app.delete("/api/ventas/{venta_id}")
-def delete_venta(request: Request, venta_id: str):
-    user = get_current_user(request)
-    if not check_permission(user, "ventas", "eliminar"):
-        raise HTTPException(status_code=403, detail="Sin permiso para eliminar ventas")
-
-    existing = ventas_col.find_one({"_id": ObjectId(venta_id)})
-    if not existing:
-        raise HTTPException(status_code=404, detail="Venta no encontrada")
-
-    # Reponer stock
-    for item in existing.get("items", []):
-        producto = productos_col.find_one({"_id": ObjectId(item["producto_id"])})
-        if producto:
-            stock_anterior = producto.get("stock", 0)
-            productos_col.update_one(
-                {"_id": ObjectId(item["producto_id"])},
-                {"$inc": {"stock": item["cantidad"]}}
-            )
-            registrar_movimiento_stock(
-                producto_id=item["producto_id"],
-                producto_nombre=item["nombre"],
-                tipo="entrada",
-                cantidad=item["cantidad"],
-                referencia_id=venta_id,
-                referencia_tipo="venta_eliminada",
-                usuario_id=user["id"],
-                usuario_email=user["email"],
-                stock_anterior=stock_anterior
-            )
-
-    ventas_col.delete_one({"_id": ObjectId(venta_id)})
-    registrar_auditoria(user["id"], user["email"], "eliminar", "ventas", {"venta_id": venta_id})
-    return {"message": "Venta eliminada y stock repuesto"}
-
 # ============ COMPRAS ============
 @app.get("/api/compras")
 def get_compras(
@@ -1294,7 +1353,7 @@ def create_compra(request: Request, compra: CompraBase):
         "total": total,
         "total_iva": total_iva,
         "observaciones": compra.observaciones,
-        "fecha": compra.fecha or datetime.now(timezone.utc).isoformat(),
+        "fecha": venta.fecha if venta.fecha else datetime.now(timezone.utc).isoformat(),
         "created_at": datetime.now(timezone.utc).isoformat(),
         "created_by": user["id"]
     }
@@ -1339,127 +1398,6 @@ def create_compra(request: Request, compra: CompraBase):
     
     return {"id": str(result.inserted_id), "message": "Compra registrada", "total": total}
 
-@app.put("/api/compras/{compra_id}")
-def update_compra(request: Request, compra_id: str, compra: CompraBase):
-    user = get_current_user(request)
-    if not check_permission(user, "compras", "editar"):
-        raise HTTPException(status_code=403, detail="Sin permiso para editar compras")
-
-    existing = compras_col.find_one({"_id": ObjectId(compra_id)})
-    if not existing:
-        raise HTTPException(status_code=404, detail="Compra no encontrada")
-
-    # Revertir stock de items anteriores
-    for item in existing.get("items", []):
-        producto = productos_col.find_one({"_id": ObjectId(item["producto_id"])})
-        if producto:
-            stock_anterior = producto.get("stock", 0)
-            productos_col.update_one(
-                {"_id": ObjectId(item["producto_id"])},
-                {"$inc": {"stock": -item["cantidad"]}}
-            )
-            registrar_movimiento_stock(
-                producto_id=item["producto_id"],
-                producto_nombre=item["nombre"],
-                tipo="salida",
-                cantidad=item["cantidad"],
-                referencia_id=compra_id,
-                referencia_tipo="compra_reversion",
-                usuario_id=user["id"],
-                usuario_email=user["email"],
-                stock_anterior=stock_anterior
-            )
-
-    # Calcular nuevo total
-    total = 0
-    total_iva = 0
-    for item in compra.items:
-        subtotal = item.cantidad * item.precio_unitario
-        iva = subtotal * item.iva_pct / (100 + item.iva_pct)
-        total += subtotal
-        total_iva += iva
-
-    # Usar fecha del request si viene, sino la original
-    fecha = getattr(compra, 'fecha', None) or existing.get("fecha", datetime.now(timezone.utc).isoformat())
-
-    compras_col.update_one(
-        {"_id": ObjectId(compra_id)},
-        {"$set": {
-            "proveedor_id": compra.proveedor_id,
-            "proveedor_nombre": compra.proveedor_nombre,
-            "factura": compra.factura,
-            "items": [item.model_dump() for item in compra.items],
-            "total": total,
-            "total_iva": total_iva,
-            "observaciones": compra.observaciones,
-            "fecha": fecha,
-            "updated_at": datetime.now(timezone.utc).isoformat(),
-            "updated_by": user["id"]
-        }}
-    )
-
-    # Aplicar stock nuevo
-    for item in compra.items:
-        producto = productos_col.find_one({"_id": ObjectId(item.producto_id)})
-        stock_anterior = producto.get("stock", 0) if producto else 0
-        productos_col.update_one(
-            {"_id": ObjectId(item.producto_id)},
-            {
-                "$inc": {"stock": item.cantidad},
-                "$set": {"costo": item.precio_unitario * (1 - item.iva_pct/(100+item.iva_pct))}
-            }
-        )
-        registrar_movimiento_stock(
-            producto_id=item.producto_id,
-            producto_nombre=item.nombre,
-            tipo="entrada",
-            cantidad=item.cantidad,
-            referencia_id=compra_id,
-            referencia_tipo="compra",
-            usuario_id=user["id"],
-            usuario_email=user["email"],
-            stock_anterior=stock_anterior
-        )
-
-    registrar_auditoria(user["id"], user["email"], "editar", "compras",
-                        {"compra_id": compra_id, "total": total})
-    return {"message": "Compra actualizada", "total": total}
-
-@app.delete("/api/compras/{compra_id}")
-def delete_compra(request: Request, compra_id: str):
-    user = get_current_user(request)
-    if not check_permission(user, "compras", "eliminar"):
-        raise HTTPException(status_code=403, detail="Sin permiso para eliminar compras")
-
-    existing = compras_col.find_one({"_id": ObjectId(compra_id)})
-    if not existing:
-        raise HTTPException(status_code=404, detail="Compra no encontrada")
-
-    # Revertir stock
-    for item in existing.get("items", []):
-        producto = productos_col.find_one({"_id": ObjectId(item["producto_id"])})
-        if producto:
-            stock_anterior = producto.get("stock", 0)
-            productos_col.update_one(
-                {"_id": ObjectId(item["producto_id"])},
-                {"$inc": {"stock": -item["cantidad"]}}
-            )
-            registrar_movimiento_stock(
-                producto_id=item["producto_id"],
-                producto_nombre=item["nombre"],
-                tipo="salida",
-                cantidad=item["cantidad"],
-                referencia_id=compra_id,
-                referencia_tipo="compra_eliminada",
-                usuario_id=user["id"],
-                usuario_email=user["email"],
-                stock_anterior=stock_anterior
-            )
-
-    compras_col.delete_one({"_id": ObjectId(compra_id)})
-    registrar_auditoria(user["id"], user["email"], "eliminar", "compras", {"compra_id": compra_id})
-    return {"message": "Compra eliminada y stock revertido"}
-
 # ============ GASTOS ============
 @app.get("/api/gastos")
 def get_gastos(request: Request, skip: int = 0, limit: int = 50):
@@ -1484,6 +1422,310 @@ def create_gasto(request: Request, gasto: GastoBase):
                         {"gasto_id": str(result.inserted_id), "monto": gasto.monto})
     
     return {"id": str(result.inserted_id), "message": "Gasto registrado"}
+
+# ============ VENTAS - GET, PUT, DELETE ============
+@app.get("/api/ventas/{venta_id}")
+def get_venta(request: Request, venta_id: str):
+    user = get_current_user(request)
+    try:
+        venta = ventas_col.find_one({"_id": ObjectId(venta_id)})
+    except:
+        raise HTTPException(status_code=400, detail="ID inválido")
+    
+    if not venta:
+        raise HTTPException(status_code=404, detail="Venta no encontrada")
+    
+    return serialize_doc(venta)
+
+@app.put("/api/ventas/{venta_id}")
+def update_venta(request: Request, venta_id: str, data: VentaUpdate):
+    user = get_current_user(request)
+    if not check_permission(user, "ventas", "editar"):
+        raise HTTPException(status_code=403, detail="Sin permiso para editar ventas")
+    
+    try:
+        venta_oid = ObjectId(venta_id)
+    except:
+        raise HTTPException(status_code=400, detail="ID inválido")
+    
+    venta = ventas_col.find_one({"_id": venta_oid})
+    if not venta:
+        raise HTTPException(status_code=404, detail="Venta no encontrada")
+    
+    update_fields = {k: v for k, v in data.model_dump().items() if v is not None}
+    if not update_fields:
+        raise HTTPException(status_code=400, detail="No hay datos para actualizar")
+    
+    update_fields["updated_at"] = datetime.now(timezone.utc).isoformat()
+    ventas_col.update_one({"_id": venta_oid}, {"$set": update_fields})
+    
+    registrar_auditoria(user["id"], user["email"], "actualizar", "ventas", {"venta_id": venta_id})
+    
+    return {"message": "Venta actualizada"}
+
+@app.delete("/api/ventas/{venta_id}")
+def delete_venta(request: Request, venta_id: str):
+    user = get_current_user(request)
+    if not check_permission(user, "ventas", "eliminar"):
+        raise HTTPException(status_code=403, detail="Sin permiso para eliminar ventas")
+    
+    try:
+        venta_oid = ObjectId(venta_id)
+    except:
+        raise HTTPException(status_code=400, detail="ID inválido")
+    
+    venta = ventas_col.find_one({"_id": venta_oid})
+    if not venta:
+        raise HTTPException(status_code=404, detail="Venta no encontrada")
+    
+    # Restore stock
+    for item in venta.get("items", []):
+        productos_col.update_one(
+            {"_id": ObjectId(item["producto_id"])},
+            {"$inc": {"stock": item["cantidad"]}}
+        )
+    
+    ventas_col.delete_one({"_id": venta_oid})
+    registrar_auditoria(user["id"], user["email"], "eliminar", "ventas", {"venta_id": venta_id})
+    
+    return {"message": "Venta eliminada"}
+
+# ============ COMPRAS - GET, PUT, DELETE ============
+@app.get("/api/compras/{compra_id}")
+def get_compra(request: Request, compra_id: str):
+    user = get_current_user(request)
+    try:
+        compra = compras_col.find_one({"_id": ObjectId(compra_id)})
+    except:
+        raise HTTPException(status_code=400, detail="ID inválido")
+    
+    if not compra:
+        raise HTTPException(status_code=404, detail="Compra no encontrada")
+    
+    return serialize_doc(compra)
+
+@app.put("/api/compras/{compra_id}")
+def update_compra(request: Request, compra_id: str, data: CompraUpdate):
+    user = get_current_user(request)
+    if not check_permission(user, "compras", "editar"):
+        raise HTTPException(status_code=403, detail="Sin permiso para editar compras")
+    
+    try:
+        compra_oid = ObjectId(compra_id)
+    except:
+        raise HTTPException(status_code=400, detail="ID inválido")
+    
+    compra = compras_col.find_one({"_id": compra_oid})
+    if not compra:
+        raise HTTPException(status_code=404, detail="Compra no encontrada")
+    
+    update_fields = {k: v for k, v in data.model_dump().items() if v is not None}
+    if not update_fields:
+        raise HTTPException(status_code=400, detail="No hay datos para actualizar")
+    
+    update_fields["updated_at"] = datetime.now(timezone.utc).isoformat()
+    compras_col.update_one({"_id": compra_oid}, {"$set": update_fields})
+    
+    registrar_auditoria(user["id"], user["email"], "actualizar", "compras", {"compra_id": compra_id})
+    
+    return {"message": "Compra actualizada"}
+
+@app.delete("/api/compras/{compra_id}")
+def delete_compra(request: Request, compra_id: str):
+    user = get_current_user(request)
+    if not check_permission(user, "compras", "eliminar"):
+        raise HTTPException(status_code=403, detail="Sin permiso para eliminar compras")
+    
+    try:
+        compra_oid = ObjectId(compra_id)
+    except:
+        raise HTTPException(status_code=400, detail="ID inválido")
+    
+    compra = compras_col.find_one({"_id": compra_oid})
+    if not compra:
+        raise HTTPException(status_code=404, detail="Compra no encontrada")
+    
+    # Reverse stock
+    for item in compra.get("items", []):
+        productos_col.update_one(
+            {"_id": ObjectId(item["producto_id"])},
+            {"$inc": {"stock": -item["cantidad"]}}
+        )
+    
+    compras_col.delete_one({"_id": compra_oid})
+    registrar_auditoria(user["id"], user["email"], "eliminar", "compras", {"compra_id": compra_id})
+    
+    return {"message": "Compra eliminada"}
+
+# ============ GASTOS - GET, PUT, DELETE, CATEGORIAS ============
+@app.get("/api/gastos/{gasto_id}")
+def get_gasto(request: Request, gasto_id: str):
+    user = get_current_user(request)
+    try:
+        gasto = gastos_col.find_one({"_id": ObjectId(gasto_id)})
+    except:
+        raise HTTPException(status_code=400, detail="ID inválido")
+    
+    if not gasto:
+        raise HTTPException(status_code=404, detail="Gasto no encontrado")
+    
+    return serialize_doc(gasto)
+
+@app.put("/api/gastos/{gasto_id}")
+def update_gasto(request: Request, gasto_id: str, data: GastoUpdate):
+    user = get_current_user(request)
+    if not check_permission(user, "gastos", "editar"):
+        raise HTTPException(status_code=403, detail="Sin permiso para editar gastos")
+    
+    try:
+        gasto_oid = ObjectId(gasto_id)
+    except:
+        raise HTTPException(status_code=400, detail="ID inválido")
+    
+    gasto = gastos_col.find_one({"_id": gasto_oid})
+    if not gasto:
+        raise HTTPException(status_code=404, detail="Gasto no encontrado")
+    
+    update_fields = {k: v for k, v in data.model_dump().items() if v is not None}
+    if not update_fields:
+        raise HTTPException(status_code=400, detail="No hay datos para actualizar")
+    
+    update_fields["updated_at"] = datetime.now(timezone.utc).isoformat()
+    gastos_col.update_one({"_id": gasto_oid}, {"$set": update_fields})
+    
+    registrar_auditoria(user["id"], user["email"], "actualizar", "gastos", {"gasto_id": gasto_id})
+    
+    return {"message": "Gasto actualizado"}
+
+@app.delete("/api/gastos/{gasto_id}")
+def delete_gasto(request: Request, gasto_id: str):
+    user = get_current_user(request)
+    if not check_permission(user, "gastos", "eliminar"):
+        raise HTTPException(status_code=403, detail="Sin permiso para eliminar gastos")
+    
+    try:
+        gasto_oid = ObjectId(gasto_id)
+    except:
+        raise HTTPException(status_code=400, detail="ID inválido")
+    
+    gasto = gastos_col.find_one({"_id": gasto_oid})
+    if not gasto:
+        raise HTTPException(status_code=404, detail="Gasto no encontrado")
+    
+    gastos_col.delete_one({"_id": gasto_oid})
+    registrar_auditoria(user["id"], user["email"], "eliminar", "gastos", {"gasto_id": gasto_id})
+    
+    return {"message": "Gasto eliminado"}
+
+@app.get("/api/gastos/categorias")
+def get_gastos_categorias(request: Request):
+    user = get_current_user(request)
+    
+    # Get unique categories from DB
+    unique_cats = gastos_col.distinct("categoria")
+    
+    # Add default categories
+    default_cats = ["Transporte", "Marketing", "Servicios", "Operativos", "Otros"]
+    categorias = list(set(unique_cats + default_cats))
+    
+    return {"categorias": sorted(categorias)}
+
+# ============ INVENTARIO ENDPOINTS ============
+@app.get("/api/inventario")
+def get_inventario(request: Request, skip: int = 0, limit: int = 100, search: str = None):
+    user = get_current_user(request)
+    
+    query = {"activo": True}
+    if search:
+        query["$or"] = [
+            {"nombre": {"$regex": search, "$options": "i"}},
+            {"codigo": {"$regex": search, "$options": "i"}},
+            {"variante": {"$regex": search, "$options": "i"}}
+        ]
+    
+    productos = list(productos_col.find(query).skip(skip).limit(limit))
+    
+    inventario = []
+    for p in productos:
+        try:
+            # Calculate stock from movements
+            movements = list(stock_movimientos_col.find({"producto_id": str(p["_id"])}))
+            stock_calc = 0
+            valor_entradas = 0.0
+            cant_entradas = 0
+
+            for m in movements:
+                tipo = m.get("tipo", "")
+                cantidad = int(m.get("cantidad") or 0)
+                valor_mov = float(m.get("valor_movimiento") or 0)
+
+                if tipo == "entrada":
+                    stock_calc += cantidad
+                    valor_entradas += valor_mov
+                    cant_entradas += cantidad
+                elif tipo == "salida":
+                    stock_calc -= cantidad
+                elif tipo == "ajuste":
+                    # ajuste puede ser positivo o negativo según stock_nuevo - stock_anterior
+                    stock_ant = int(m.get("stock_anterior") or 0)
+                    stock_nvo = int(m.get("stock_nuevo") or 0)
+                    stock_calc = stock_nvo  # ajuste fija el stock directamente
+
+            # Costo promedio ponderado usando solo entradas
+            costo_promedio = float(p.get("costo") or 0)
+            if cant_entradas > 0 and valor_entradas > 0:
+                costo_promedio = valor_entradas / cant_entradas
+
+            inventario.append({
+                "id": str(p["_id"]),
+                "producto_id": str(p["_id"]),
+                "codigo": p.get("codigo", ""),
+                "nombre": p.get("nombre", ""),
+                "variante": p.get("variante", ""),
+                "stock_actual": stock_calc,
+                "costo_promedio": round(costo_promedio, 2),
+                "precio_venta": float(p.get("precio_con_iva") or 0),
+                "valor_stock": round(max(stock_calc, 0) * costo_promedio, 2)
+            })
+        except Exception as e:
+            # Si un producto falla, lo incluimos con valores en 0 para no romper toda la lista
+            inventario.append({
+                "id": str(p["_id"]),
+                "producto_id": str(p["_id"]),
+                "codigo": p.get("codigo", ""),
+                "nombre": p.get("nombre", ""),
+                "variante": p.get("variante", ""),
+                "stock_actual": 0,
+                "costo_promedio": 0,
+                "precio_venta": float(p.get("precio_con_iva") or 0),
+                "valor_stock": 0
+            })
+    
+    return {
+        "total": productos_col.count_documents(query),
+        "inventario": inventario
+    }
+
+@app.get("/api/inventario/{producto_id}")
+def get_inventario_detalle(request: Request, producto_id: str):
+    user = get_current_user(request)
+    
+    try:
+        producto = productos_col.find_one({"_id": ObjectId(producto_id)})
+    except:
+        raise HTTPException(status_code=400, detail="ID inválido")
+    
+    if not producto:
+        raise HTTPException(status_code=404, detail="Producto no encontrado")
+    
+    # Get movement history
+    movimientos = list(stock_movimientos_col.find({"producto_id": producto_id}).sort("fecha", -1))
+    
+    return {
+        "producto": serialize_doc(producto),
+        "movimientos": serialize_docs(movimientos)
+    }
+
 
 # ============ REPORTES ============
 @app.get("/api/reportes/ventas")

@@ -9,7 +9,7 @@ import {
   ChartPie, FilePdf, TrendUp, TrendDown, Target, Sliders, FloppyDisk,
   ArrowsOutCardinal, Layout, Rows, SquaresFour,
   ShareNetwork, Globe, LockSimple, UsersThree, Copy, BookmarkSimple,
-  Camera, CalendarBlank, Funnel
+  Camera, CalendarBlank, Funnel, Archive
 } from '@phosphor-icons/react';
 import {
   AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell, LineChart, Line,
@@ -80,21 +80,19 @@ const api = {
   ajustarStock: (id, d) => axios.post(`${API_URL}/api/productos/${id}/ajuste-stock`, d),
   getCategorias: () => axios.get(`${API_URL}/api/categorias`),
   getClientes: (p) => axios.get(`${API_URL}/api/clientes`, { params: p }),
+  getClienteVentas: (id, p) => axios.get(`${API_URL}/api/clientes/${id}/ventas`, { params: p }),
   createCliente: (d) => axios.post(`${API_URL}/api/clientes`, d),
   updateCliente: (id, d) => axios.put(`${API_URL}/api/clientes/${id}`, d),
   deleteCliente: (id) => axios.delete(`${API_URL}/api/clientes/${id}`),
   getProveedores: (p) => axios.get(`${API_URL}/api/proveedores`, { params: p }),
+  getProveedorCompras: (id, p) => axios.get(`${API_URL}/api/proveedores/${id}/compras`, { params: p }),
   createProveedor: (d) => axios.post(`${API_URL}/api/proveedores`, d),
   updateProveedor: (id, d) => axios.put(`${API_URL}/api/proveedores/${id}`, d),
   deleteProveedor: (id) => axios.delete(`${API_URL}/api/proveedores/${id}`),
   getVentas: (p) => axios.get(`${API_URL}/api/ventas`, { params: p }),
   createVenta: (d) => axios.post(`${API_URL}/api/ventas`, d),
-  updateVenta: (id, d) => axios.put(`${API_URL}/api/ventas/${id}`, d),
-  deleteVenta: (id) => axios.delete(`${API_URL}/api/ventas/${id}`),
   getCompras: (p) => axios.get(`${API_URL}/api/compras`, { params: p }),
   createCompra: (d) => axios.post(`${API_URL}/api/compras`, d),
-  updateCompra: (id, d) => axios.put(`${API_URL}/api/compras/${id}`, d),
-  deleteCompra: (id) => axios.delete(`${API_URL}/api/compras/${id}`),
   getGastos: (p) => axios.get(`${API_URL}/api/gastos`, { params: p }),
   createGasto: (d) => axios.post(`${API_URL}/api/gastos`, d),
   getAuditoria: (p) => axios.get(`${API_URL}/api/auditoria`, { params: p }),
@@ -108,6 +106,25 @@ const api = {
   getGastosPorCategoria: () => axios.get(`${API_URL}/api/estadisticas/gastos-por-categoria`),
   getResumenGeneral: () => axios.get(`${API_URL}/api/estadisticas/resumen-general`),
   seedData: () => axios.post(`${API_URL}/api/seed`),
+  // Gastos - Additional
+  updateGasto: (id, d) => axios.put(`${API_URL}/api/gastos/${id}`, d),
+  deleteGasto: (id) => axios.delete(`${API_URL}/api/gastos/${id}`),
+  getGastosCategorias: () => axios.get(`${API_URL}/api/gastos/categorias`),
+  // Ventas - Additional
+  getVenta: (id) => axios.get(`${API_URL}/api/ventas/${id}`),
+  updateVenta: (id, d) => axios.put(`${API_URL}/api/ventas/${id}`, d),
+  deleteVenta: (id) => axios.delete(`${API_URL}/api/ventas/${id}`),
+  // Compras - Additional
+  getCompra: (id) => axios.get(`${API_URL}/api/compras/${id}`),
+  updateCompra: (id, d) => axios.put(`${API_URL}/api/compras/${id}`, d),
+  deleteCompra: (id) => axios.delete(`${API_URL}/api/compras/${id}`),
+  // Inventario
+  getInventario: (p) => axios.get(`${API_URL}/api/inventario`, { params: p }),
+  getInventarioDetalle: (id) => axios.get(`${API_URL}/api/inventario/${id}`),
+  // Estadísticas adicionales
+  getProductosMasRentables: (p) => axios.get(`${API_URL}/api/estadisticas/productos-mas-rentables`, { params: p }),
+  getProductosSinMovimiento: (p) => axios.get(`${API_URL}/api/estadisticas/productos-sin-movimiento`, { params: p }),
+  getClientesTop: (p) => axios.get(`${API_URL}/api/estadisticas/clientes-top`, { params: p })
 };
 
 // Login Page
@@ -174,6 +191,7 @@ function Sidebar({ activeView, setActiveView, user, onLogout, onNavigate }) {
     { id: 'clientes', label: 'Clientes', icon: Users, visible: check('clientes') },
     { id: 'proveedores', label: 'Proveedores', icon: Truck, visible: check('proveedores') },
     { id: 'gastos', label: 'Gastos', icon: Money, visible: check('gastos') },
+    { id: 'inventario', label: 'Inventario', icon: Archive, visible: check('inventario') },
     { id: 'reportes', label: 'Reportes', icon: FileText, visible: check('reportes') },
     { id: 'stock-historial', label: 'Historial Stock', icon: ClockCounterClockwise, visible: check('stock_historial') },
   ];
@@ -1298,10 +1316,11 @@ function ProductosView({ user }) {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [showModal, setShowModal] = useState(false);
+  const [showAjusteModal, setShowAjusteModal] = useState(null);
   const [editItem, setEditItem] = useState(null);
   const [categorias, setCategorias] = useState([]);
-  const [form, setForm] = useState({ codigo: '', nombre: '', variante: '', categoria: '', proveedor: '', precio_con_iva: 0, costo: 0, stock: 0, stock_minimo: 2, iva_pct: 10, margen: 15, utilidad: 20, precio_sugerido: 0 });
-  const calcPrecioSugerido = (costo, utilidad) => Math.round(parseFloat(costo || 0) * (1 + parseFloat(utilidad || 0) / 100));
+  const [form, setForm] = useState({ codigo: '', nombre: '', variante: '', categoria: '', proveedor: '', precio_con_iva: 0, costo: 0, stock: 0, stock_minimo: 2, iva_pct: 10, margen: 15 });
+  const [ajusteForm, setAjusteForm] = useState({ cantidad: 0, motivo: '' });
   const isAdmin = user?.role === 'admin';
   const canCreate = hasPermission(user, 'productos', 'crear');
   const canEdit = hasPermission(user, 'productos', 'editar');
@@ -1320,8 +1339,8 @@ function ProductosView({ user }) {
 
   useEffect(() => { loadData(); }, [loadData]);
 
-  const openNew = () => { setEditItem(null); setForm({ codigo: '', nombre: '', variante: '', categoria: categorias[0] || '', proveedor: '', precio_con_iva: 0, costo: 0, stock: 0, stock_minimo: 2, iva_pct: 10, margen: 15, utilidad: 20, precio_sugerido: 0 }); setShowModal(true); };
-  const openEdit = (p) => { const utilidad = p.margen || 20; const precio_sugerido = p.precio_con_iva || Math.round((p.costo || 0) * (1 + utilidad / 100)); setEditItem(p); setForm({ codigo: p.codigo, nombre: p.nombre, variante: p.variante || '', categoria: p.categoria, proveedor: p.proveedor || '', precio_con_iva: p.precio_con_iva, costo: p.costo, stock: p.stock, stock_minimo: p.stock_minimo, iva_pct: p.iva_pct || 10, margen: p.margen || 15, utilidad, precio_sugerido }); setShowModal(true); };
+  const openNew = () => { setEditItem(null); setForm({ codigo: '', nombre: '', variante: '', categoria: categorias[0] || '', proveedor: '', precio_con_iva: 0, costo: 0, stock: 0, stock_minimo: 2, iva_pct: 10, margen: 15 }); setShowModal(true); };
+  const openEdit = (p) => { setEditItem(p); setForm({ codigo: p.codigo, nombre: p.nombre, variante: p.variante || '', categoria: p.categoria, proveedor: p.proveedor || '', precio_con_iva: p.precio_con_iva, costo: p.costo, stock: p.stock, stock_minimo: p.stock_minimo, iva_pct: p.iva_pct || 10, margen: p.margen || 15 }); setShowModal(true); };
 
   const handleSave = async () => {
     try {
@@ -1334,6 +1353,11 @@ function ProductosView({ user }) {
   const handleDelete = async (id) => {
     if (!window.confirm('¿Eliminar este producto?')) return;
     try { await api.deleteProducto(id); loadData(); } catch (e) { alert(formatApiError(e.response?.data?.detail)); }
+  };
+
+  const handleAjuste = async () => {
+    try { await api.ajustarStock(showAjusteModal.id, ajusteForm); setShowAjusteModal(null); loadData(); }
+    catch (e) { alert(formatApiError(e.response?.data?.detail)); }
   };
 
   return (
@@ -1349,20 +1373,21 @@ function ProductosView({ user }) {
       <div className="bg-white border border-border rounded-md overflow-hidden">
         <div className="overflow-x-auto max-h-[600px]">
           <table className="data-table">
-            <thead className="sticky top-0 bg-white"><tr><th>Código</th><th>Nombre</th><th>Categoría</th><th className="text-right">Costo c/IVA</th><th className="text-right">% Util.</th><th className="text-right">Precio Venta</th>{(canEdit || canDelete) && <th className="text-center">Acciones</th>}</tr></thead>
+            <thead className="sticky top-0 bg-white"><tr><th>Código</th><th>Nombre</th><th>Categoría</th><th className="text-right">Costo</th><th className="text-right">Precio</th><th className="text-center">Stock</th>{(canEdit || canDelete) && <th className="text-center">Acciones</th>}</tr></thead>
             <tbody>
               {loading ? <tr><td colSpan={7} className="text-center py-8">Cargando...</td></tr>
               : productos.length === 0 ? <tr><td colSpan={7} className="text-center py-8">Sin productos</td></tr>
               : productos.map(p => (
                 <tr key={p.id}>
                   <td className="font-mono text-sm">{p.codigo}</td>
-                  <td className="font-medium">{p.nombre}{p.variante ? <span className="text-sm font-normal ml-1"> | Variante: {p.variante}</span> : ''}</td>
+                  <td className="font-medium">{p.nombre}{p.variante ? <div className="font-semibold text-black text-sm">{p.variante}</div> : ''}</td>
                   <td><span className="badge bg-muted text-foreground">{p.categoria}</span></td>
-                  <td className="text-right text-sm tabular-nums">{formatGs(p.costo)}</td>
-                  <td className="text-right text-sm tabular-nums">{p.margen || p.utilidad || '—'}%</td>
-                  <td className="text-right price-gs tabular-nums">{formatGs(p.precio_con_iva)}</td>
+                  <td className="text-right text-sm">{formatGs(p.costo)}</td>
+                  <td className="text-right price-gs">{formatGs(p.precio_con_iva)}</td>
+                  <td className="text-center"><span className={p.stock <= p.stock_minimo ? 'text-red-600 font-semibold' : 'text-green-600'}>{p.stock}</span></td>
                   {(canEdit || canDelete) && <td className="text-center">
                     <div className="flex items-center justify-center gap-1">
+                      {canEdit && <button onClick={() => { setShowAjusteModal(p); setAjusteForm({ cantidad: 0, motivo: '' }); }} className="p-1 hover:bg-blue-50 rounded text-blue-600" title="Ajustar stock"><Package size={16} /></button>}
                       {canEdit && <button onClick={() => openEdit(p)} className="p-1 hover:bg-yellow-50 rounded text-yellow-600" title="Editar"><Pencil size={16} /></button>}
                       {canDelete && <button onClick={() => handleDelete(p.id)} className="p-1 hover:bg-red-50 rounded text-red-600" title="Eliminar"><Trash size={16} /></button>}
                     </div>
@@ -1382,22 +1407,10 @@ function ProductosView({ user }) {
           <div className="form-group"><label className="form-label">Categoría *</label><input type="text" value={form.categoria} onChange={(e) => setForm({...form, categoria: e.target.value})} className="form-input" list="categorias-list" /><datalist id="categorias-list">{categorias.map(c => <option key={c} value={c} />)}</datalist></div>
           <div className="form-group"><label className="form-label">Proveedor</label><input type="text" value={form.proveedor} onChange={(e) => setForm({...form, proveedor: e.target.value})} className="form-input" /></div>
           <div className="form-group"><label className="form-label">IVA %</label><input type="number" value={form.iva_pct} onChange={(e) => setForm({...form, iva_pct: parseInt(e.target.value) || 0})} className="form-input" /></div>
-          <div className="form-group col-span-2">
-            <label className="form-label">Costo con IVA <span className="text-xs text-muted-foreground">(precio de compra incluye IVA)</span></label>
-            <input type="number" value={form.costo} onChange={(e) => { const costo = parseFloat(e.target.value) || 0; const sugerido = Math.round(costo * (1 + (form.utilidad || 0) / 100)); setForm({...form, costo, precio_con_iva: sugerido, precio_sugerido: sugerido}); }} className="form-input" data-testid="producto-costo" />
-          </div>
-          <div className="form-group">
-            <label className="form-label">% Utilidad esperada</label>
-            <input type="number" value={form.utilidad} onChange={(e) => { const utilidad = parseFloat(e.target.value) || 0; const sugerido = Math.round((form.costo || 0) * (1 + utilidad / 100)); setForm({...form, utilidad, margen: utilidad, precio_con_iva: sugerido, precio_sugerido: sugerido}); }} className="form-input" placeholder="Ej: 20" />
-          </div>
-          <div className="form-group">
-            <label className="form-label">Precio de venta sugerido <span className="text-xs text-blue-600">(editable)</span></label>
-            <input type="number" value={form.precio_sugerido || form.precio_con_iva} onChange={(e) => { const val = parseFloat(e.target.value) || 0; setForm({...form, precio_sugerido: val, precio_con_iva: val}); }} className="form-input font-semibold text-blue-700" />
-            {form.costo > 0 && <p className="text-xs text-muted-foreground mt-1">Gs. {(form.costo || 0).toLocaleString('es-PY')} × {form.utilidad}% = Gs. {Math.round((form.costo || 0) * (1 + (form.utilidad || 0) / 100)).toLocaleString('es-PY')}</p>}
-          </div>
-          <div className="col-span-2 bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-700">
-            El stock se gestiona desde el módulo de <strong>Compras</strong> (entradas) y <strong>Ventas</strong> (salidas).
-          </div>
+          <div className="form-group"><label className="form-label">Costo con IVA</label><input type="number" value={form.costo} onChange={(e) => setForm({...form, costo: parseFloat(e.target.value) || 0})} className="form-input" /></div>
+          <div className="form-group"><label className="form-label">Precio con IVA</label><input type="number" value={form.precio_con_iva} onChange={(e) => setForm({...form, precio_con_iva: parseFloat(e.target.value) || 0})} className="form-input" /></div>
+          <div className="form-group"><label className="form-label">Stock</label><input type="number" value={form.stock} onChange={(e) => setForm({...form, stock: parseInt(e.target.value) || 0})} className="form-input" /></div>
+          <div className="form-group"><label className="form-label">Stock Mínimo</label><input type="number" value={form.stock_minimo} onChange={(e) => setForm({...form, stock_minimo: parseInt(e.target.value) || 0})} className="form-input" /></div>
         </div>
         <div className="flex justify-end gap-3 mt-6">
           <button onClick={() => setShowModal(false)} className="px-4 py-2 border border-border rounded-md hover:bg-muted">Cancelar</button>
@@ -1405,7 +1418,17 @@ function ProductosView({ user }) {
         </div>
       </Modal>
 
-
+      <Modal isOpen={!!showAjusteModal} onClose={() => setShowAjusteModal(null)} title={`Ajustar Stock: ${showAjusteModal?.nombre || ''}`} size="sm">
+        <div className="space-y-4">
+          <p className="text-sm text-muted-foreground">Stock actual: <strong>{showAjusteModal?.stock}</strong></p>
+          <div className="form-group"><label className="form-label">Cantidad (+ entrada, - salida)</label><input type="number" value={ajusteForm.cantidad} onChange={(e) => setAjusteForm({...ajusteForm, cantidad: parseInt(e.target.value) || 0})} className="form-input" /></div>
+          <div className="form-group"><label className="form-label">Motivo *</label><input type="text" value={ajusteForm.motivo} onChange={(e) => setAjusteForm({...ajusteForm, motivo: e.target.value})} className="form-input" placeholder="Ej: Ajuste por inventario" /></div>
+          <div className="flex justify-end gap-3">
+            <button onClick={() => setShowAjusteModal(null)} className="px-4 py-2 border border-border rounded-md hover:bg-muted">Cancelar</button>
+            <button onClick={handleAjuste} disabled={!ajusteForm.motivo} className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 disabled:opacity-50">Ajustar</button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }
@@ -1416,17 +1439,21 @@ function VentasView({ user }) {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [showModal, setShowModal] = useState(false);
-  const [showDetalleModal, setShowDetalleModal] = useState(null);
+  const [showDetailModal, setShowDetailModal] = useState(false);
   const [editItem, setEditItem] = useState(null);
+  const [selectedVenta, setSelectedVenta] = useState(null);
   const [clientes, setClientes] = useState([]);
   const [productos, setProductos] = useState([]);
-  const [productoSearch, setProductoSearch] = useState('');
-  const [showProductoSugg, setShowProductoSugg] = useState(false);
-  const emptyForm = { cliente_id: '', cliente_nombre: '', fecha: new Date().toISOString().split('T')[0], items: [], observaciones: '' };
-  const [form, setForm] = useState(emptyForm);
-  const [itemForm, setItemForm] = useState({ producto_id: '', cantidad: 1, precio_unitario: 0, costo_unitario: 0, stock: 0 });
-  const canEdit = hasPermission(user, 'ventas', 'editar');
-  const canDelete = hasPermission(user, 'ventas', 'eliminar');
+  const [prodSearch, setProdSearch] = useState('');
+  const [showProdSearch, setShowProdSearch] = useState(false);
+  const [form, setForm] = useState({
+    cliente_id: '', cliente_nombre: '', fecha: new Date().toISOString().split('T')[0],
+    items: [], observaciones: ''
+  });
+  const [itemQty, setItemQty] = useState(1);
+  const isAdmin = user?.role === 'admin';
+  const canEdit = hasPermission(user, 'ventas', 'editar') || isAdmin;
+  const canDelete = hasPermission(user, 'ventas', 'eliminar') || isAdmin;
 
   const loadData = useCallback(() => {
     setLoading(true);
@@ -1435,125 +1462,105 @@ function VentasView({ user }) {
 
   useEffect(() => { loadData(); }, [loadData]);
 
-  const loadClientesProd = async () => {
+  const openNew = async () => {
     const [cRes, pRes] = await Promise.all([api.getClientes({}), api.getProductos({})]);
     setClientes(cRes.data.clientes || []);
     setProductos(pRes.data.productos || []);
-  };
-
-  const openNew = async () => {
-    await loadClientesProd();
     setEditItem(null);
-    setForm(emptyForm);
-    setProductoSearch('');
+    setForm({ cliente_id: '', cliente_nombre: '', fecha: new Date().toISOString().split('T')[0], items: [], observaciones: '' });
+    setProdSearch('');
     setShowModal(true);
   };
 
   const openEdit = async (v) => {
-    await loadClientesProd();
+    const [cRes, pRes] = await Promise.all([api.getClientes({}), api.getProductos({})]);
+    setClientes(cRes.data.clientes || []);
+    setProductos(pRes.data.productos || []);
     setEditItem(v);
     setForm({
-      cliente_id: v.cliente_id,
-      cliente_nombre: v.cliente_nombre,
+      cliente_id: v.cliente_id || '', cliente_nombre: v.cliente_nombre || '',
       fecha: v.fecha ? v.fecha.split('T')[0] : new Date().toISOString().split('T')[0],
-      items: v.items || [],
+      items: (v.items || []).map(i => ({
+        producto_id: i.producto_id, codigo: i.codigo, nombre: i.nombre, variante: i.variante || '',
+        cantidad: i.cantidad, precio_unitario: i.precio_unitario, costo_unitario: i.costo_unitario || 0, iva_pct: i.iva_pct || 10
+      })),
       observaciones: v.observaciones || ''
     });
-    setProductoSearch('');
     setShowModal(true);
   };
 
-  const handleDelete = async (id) => {
-    if (!window.confirm('¿Eliminar esta venta? Esto repondrá el stock descontado.')) return;
-    try { await axios.delete(`${API_URL}/api/ventas/${id}`, { withCredentials: true }); loadData(); }
-    catch (e) { alert(formatApiError(e.response?.data?.detail)); }
-  };
+  const openDetail = (v) => { setSelectedVenta(v); setShowDetailModal(true); };
 
-  const selectCliente = (id) => {
-    const c = clientes.find(cl => cl.id === id);
-    setForm(f => ({...f, cliente_id: id, cliente_nombre: c?.nombre || ''}));
-  };
-
-  // Autocomplete productos — solo con stock
-  const productosFiltrados = productoSearch.length >= 1
-    ? productos.filter(p => {
-        const q = productoSearch.toLowerCase();
-        return (p.codigo?.toLowerCase().includes(q) || p.nombre?.toLowerCase().includes(q) || p.variante?.toLowerCase().includes(q));
-      }).slice(0, 8)
+  const filteredProds = prodSearch.length >= 1
+    ? productos.filter(p =>
+        p.codigo?.toLowerCase().includes(prodSearch.toLowerCase()) ||
+        p.nombre?.toLowerCase().includes(prodSearch.toLowerCase()) ||
+        p.variante?.toLowerCase().includes(prodSearch.toLowerCase()))
     : [];
 
-  const selectProductoSugg = (prod) => {
-    setItemForm({ producto_id: prod.id, cantidad: 1, precio_unitario: prod.precio_con_iva || 0, costo_unitario: prod.costo || 0, stock: prod.stock || 0 });
-    setProductoSearch(`${prod.codigo} | ${prod.nombre}${prod.variante ? ' | Variante: ' + prod.variante : ''}`);
-    setShowProductoSugg(false);
+  const addItem = (prod) => {
+    if (form.items.find(i => i.producto_id === prod.id)) { setProdSearch(''); setShowProdSearch(false); return; }
+    setForm({ ...form, items: [...form.items, {
+      producto_id: prod.id, codigo: prod.codigo, nombre: prod.nombre, variante: prod.variante || '',
+      cantidad: 1, precio_unitario: prod.precio_con_iva, costo_unitario: prod.costo || 0, iva_pct: prod.iva_pct || 10
+    }]});
+    setProdSearch(''); setShowProdSearch(false);
   };
 
-  const addItem = () => {
-    if (!itemForm.producto_id || itemForm.cantidad < 1) return;
-    const prod = productos.find(p => p.id === itemForm.producto_id);
-    if (!prod) return;
-    if (itemForm.cantidad > prod.stock) return alert(`Stock insuficiente. Disponible: ${prod.stock}`);
-    if (form.items.find(i => i.producto_id === prod.id)) return alert('Producto ya agregado');
-    setForm(f => ({...f, items: [...f.items, {
-      producto_id: prod.id,
-      codigo: prod.codigo,
-      nombre: prod.nombre,
-      variante: prod.variante || '',
-      cantidad: itemForm.cantidad,
-      precio_unitario: itemForm.precio_unitario,
-      costo_unitario: prod.costo || 0,
-      iva_pct: prod.iva_pct || 10,
-      stock_disponible: prod.stock
-    }]}));
-    setItemForm({ producto_id: '', cantidad: 1, precio_unitario: 0, costo_unitario: 0, stock: 0 });
-    setProductoSearch('');
+  const removeItem = (idx) => setForm({ ...form, items: form.items.filter((_, i) => i !== idx) });
+  const updateItemQty = (idx, qty) => {
+    const items = [...form.items];
+    items[idx] = { ...items[idx], cantidad: Math.max(1, parseInt(qty) || 1) };
+    setForm({ ...form, items });
+  };
+  const updateItemPrice = (idx, price) => {
+    const items = [...form.items];
+    items[idx] = { ...items[idx], precio_unitario: parseFloat(price) || 0 };
+    setForm({ ...form, items });
   };
 
-  const removeItem = (idx) => setForm(f => ({...f, items: f.items.filter((_, i) => i !== idx)}));
-  const updateItem = (idx, field, val) => setForm(f => ({...f, items: f.items.map((it, i) => i === idx ? {...it, [field]: val} : it)}));
-
-  const total = form.items.reduce((s, i) => s + (i.precio_unitario * i.cantidad), 0);
-  const totalCosto = form.items.reduce((s, i) => s + (i.costo_unitario * i.cantidad), 0);
-  const utilidadTotal = total - totalCosto;
+  const total = form.items.reduce((s, i) => s + i.precio_unitario * i.cantidad, 0);
 
   const handleSave = async () => {
     if (!form.cliente_id || form.items.length === 0) return alert('Seleccione cliente y agregue productos');
-    // Validar stock
-    for (const item of form.items) {
-      const prod = productos.find(p => p.id === item.producto_id);
-      if (prod && item.cantidad > prod.stock && !editItem) return alert(`Stock insuficiente para ${item.nombre}. Disponible: ${prod.stock}`);
-    }
     try {
-      const payload = { ...form };
-      if (editItem) { await axios.put(`${API_URL}/api/ventas/${editItem.id}`, payload, { withCredentials: true }); }
-      else { await api.createVenta(payload); }
+      if (editItem) { await api.updateVenta(editItem.id, form); }
+      else { await api.createVenta(form); }
       setShowModal(false); loadData();
     } catch (e) { alert(formatApiError(e.response?.data?.detail)); }
   };
 
-  const filteredVentas = ventas.filter(v =>
-    !search || v.cliente_nombre?.toLowerCase().includes(search.toLowerCase()) || v.fecha?.includes(search)
-  );
-
-  const itemsLabel = (items) => {
-    if (!items || items.length === 0) return '—';
-    const first = items[0];
-    const nombre = first.nombre + (first.variante ? ` | Variante: ${first.variante}` : '');
-    if (items.length === 1) return nombre;
-    return `${nombre} + ${items.length - 1} más`;
+  const handleDelete = async (id) => {
+    if (!window.confirm('¿Eliminar esta venta? Se restaurará el stock.')) return;
+    try { await api.deleteVenta(id); loadData(); }
+    catch (e) { alert(formatApiError(e.response?.data?.detail)); }
   };
+
+  const getItemsLabel = (items) => {
+    if (!items || items.length === 0) return '-';
+    const first = items[0];
+    const name = first.variante ? `${first.nombre} | Variante: ${first.variante}` : first.nombre;
+    if (items.length === 1) return name;
+    return `${name} + ${items.length - 1} más`;
+  };
+
+  const filteredVentas = ventas.filter(v =>
+    !search || v.cliente_nombre?.toLowerCase().includes(search.toLowerCase()) ||
+    v.fecha?.includes(search)
+  );
 
   return (
     <div className="space-y-6" data-testid="ventas-view">
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-heading font-semibold">Ventas</h2>
-        <button onClick={openNew} className="flex items-center gap-2 px-4 py-2 bg-[#E63946] text-white rounded-lg hover:bg-[#D90429]" data-testid="add-venta-btn"><Plus size={18} /> Nueva Venta</button>
+        <button onClick={openNew} className="flex items-center gap-2 px-4 py-2 bg-[#E63946] text-white rounded-lg hover:bg-[#D90429]" data-testid="add-venta-btn">
+          <Plus size={18} /> Nueva Venta
+        </button>
       </div>
       <div className="relative max-w-md">
         <MagnifyingGlass size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-        <input type="text" placeholder="Buscar por cliente..." value={search} onChange={(e) => setSearch(e.target.value)} className="form-input pl-10" />
+        <input type="text" placeholder="Buscar por cliente, fecha..." value={search} onChange={(e) => setSearch(e.target.value)} className="form-input pl-10" data-testid="ventas-search" />
       </div>
-
       <div className="bg-white border border-border rounded-md">
         <div className="overflow-x-auto max-h-[600px]">
           <table className="data-table">
@@ -1565,14 +1572,14 @@ function VentasView({ user }) {
               : filteredVentas.length === 0 ? <tr><td colSpan={6} className="text-center py-8">Sin ventas registradas</td></tr>
               : filteredVentas.map(v => (
                 <tr key={v.id}>
-                  <td className="text-sm tabular-nums">{new Date(v.fecha).toLocaleDateString('es-PY')}</td>
+                  <td className="whitespace-nowrap">{new Date(v.fecha).toLocaleDateString('es-PY')}</td>
                   <td className="font-medium">{v.cliente_nombre}</td>
-                  <td className="text-sm max-w-xs truncate">{itemsLabel(v.items)}</td>
-                  <td className="text-right price-gs tabular-nums">{formatGs(v.total)}</td>
-                  <td className="text-right tabular-nums font-medium text-green-600">{formatGs(v.utilidad)}</td>
+                  <td className="text-sm max-w-xs truncate">{getItemsLabel(v.items)}</td>
+                  <td className="text-right font-mono">{formatGs(v.total)}</td>
+                  <td className="text-right font-mono text-green-600">{formatGs(v.utilidad)}</td>
                   <td className="text-center">
                     <div className="flex items-center justify-center gap-1">
-                      <button onClick={() => setShowDetalleModal(v)} className="p-1 hover:bg-blue-50 rounded text-blue-600" title="Ver detalle"><Eye size={16} /></button>
+                      <button onClick={() => openDetail(v)} className="p-1 hover:bg-blue-50 rounded text-blue-600" title="Ver detalle"><Eye size={16} /></button>
                       {canEdit && <button onClick={() => openEdit(v)} className="p-1 hover:bg-yellow-50 rounded text-yellow-600" title="Editar"><Pencil size={16} /></button>}
                       {canDelete && <button onClick={() => handleDelete(v.id)} className="p-1 hover:bg-red-50 rounded text-red-600" title="Eliminar"><Trash size={16} /></button>}
                     </div>
@@ -1584,161 +1591,170 @@ function VentasView({ user }) {
         </div>
       </div>
 
-      {/* Modal detalle */}
-      <Modal isOpen={!!showDetalleModal} onClose={() => setShowDetalleModal(null)} title="Detalle de Venta" size="xl">
-        {showDetalleModal && (
+      {/* Detail Modal */}
+      <Modal isOpen={showDetailModal} onClose={() => setShowDetailModal(false)} title="Detalle de Venta" size="xl">
+        {selectedVenta && (
           <div className="space-y-4">
-            <div className="grid grid-cols-3 gap-4 bg-muted/40 rounded-lg p-4 text-sm">
-              <div><p className="text-muted-foreground">Cliente</p><p className="font-semibold">{showDetalleModal.cliente_nombre}</p></div>
-              <div><p className="text-muted-foreground">Fecha</p><p className="font-semibold">{new Date(showDetalleModal.fecha).toLocaleDateString('es-PY')}</p></div>
-              <div><p className="text-muted-foreground">Vendedor</p><p className="font-semibold">{showDetalleModal.vendedor || '—'}</p></div>
+            <div className="grid grid-cols-3 gap-4 text-sm bg-muted/30 rounded-lg p-3">
+              <div><span className="text-muted-foreground">Cliente</span><div className="font-medium">{selectedVenta.cliente_nombre}</div></div>
+              <div><span className="text-muted-foreground">Fecha</span><div className="font-medium">{new Date(selectedVenta.fecha).toLocaleDateString('es-PY')}</div></div>
+              {selectedVenta.vendedor_nombre && <div><span className="text-muted-foreground">Vendedor</span><div className="font-medium">{selectedVenta.vendedor_nombre}</div></div>}
             </div>
-            <table className="data-table">
-              <thead><tr><th>Producto</th><th className="text-center">Cant.</th><th className="text-right">Precio</th><th className="text-right">Costo Unit.</th><th className="text-right">Subtotal</th><th className="text-right text-green-700">Utilidad</th></tr></thead>
-              <tbody>
-                {showDetalleModal.items?.map((item, i) => {
-                  const util = (item.precio_unitario - item.costo_unitario) * item.cantidad;
-                  return (
-                    <tr key={i}>
-                      <td>{item.nombre}{item.variante ? <span className="text-sm ml-1"> | Variante: {item.variante}</span> : ''}</td>
-                      <td className="text-center tabular-nums">{item.cantidad}</td>
-                      <td className="text-right tabular-nums">{formatGs(item.precio_unitario)}</td>
-                      <td className="text-right tabular-nums text-muted-foreground">{formatGs(item.costo_unitario)}</td>
-                      <td className="text-right tabular-nums font-medium">{formatGs(item.precio_unitario * item.cantidad)}</td>
-                      <td className="text-right tabular-nums text-green-600 font-medium">{formatGs(util)}</td>
-                    </tr>
-                  );
-                })}
-                <tr className="font-bold bg-muted">
-                  <td colSpan={4} className="text-right">TOTAL:</td>
-                  <td className="text-right tabular-nums text-lg">{formatGs(showDetalleModal.total)}</td>
-                  <td className="text-right tabular-nums text-green-600 text-lg">{formatGs(showDetalleModal.utilidad)}</td>
-                </tr>
-              </tbody>
-            </table>
-            {showDetalleModal.observaciones && <p className="text-sm text-muted-foreground">Obs: {showDetalleModal.observaciones}</p>}
+            <div className="overflow-x-auto">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Producto</th>
+                    <th className="text-center w-16">Cant.</th>
+                    <th className="text-right w-32">Precio</th>
+                    <th className="text-right w-32">Costo Unit.</th>
+                    <th className="text-right w-32">Subtotal</th>
+                    <th className="text-right w-28">Utilidad</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(selectedVenta.items || []).map((item, i) => {
+                    const subtotal = item.precio_unitario * item.cantidad;
+                    const costoTotal = (item.costo_unitario || 0) * item.cantidad;
+                    const utilidad = subtotal - costoTotal;
+                    return (
+                      <tr key={i}>
+                        <td>
+                          <div className="font-medium">{item.nombre}</div>
+                          {item.variante && <div className="text-xs text-muted-foreground">Variante: {item.variante}</div>}
+                        </td>
+                        <td className="text-center">{item.cantidad}</td>
+                        <td className="text-right font-mono">{formatGs(item.precio_unitario)}</td>
+                        <td className="text-right font-mono text-muted-foreground">{formatGs(item.costo_unitario || 0)}</td>
+                        <td className="text-right font-mono font-medium">{formatGs(subtotal)}</td>
+                        <td className={`text-right font-mono font-medium ${utilidad >= 0 ? 'text-green-600' : 'text-red-600'}`}>{formatGs(utilidad)}</td>
+                      </tr>
+                    );
+                  })}
+                  <tr className="font-semibold bg-muted">
+                    <td colSpan={4} className="text-right">TOTAL:</td>
+                    <td className="text-right text-lg font-mono">{formatGs(selectedVenta.total)}</td>
+                    <td className="text-right text-lg font-mono text-green-600">{formatGs(selectedVenta.utilidad || 0)}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            {selectedVenta.observaciones && <p className="text-sm text-muted-foreground">Obs: {selectedVenta.observaciones}</p>}
           </div>
         )}
       </Modal>
 
-      {/* Modal crear/editar */}
+      {/* Create/Edit Modal */}
       <Modal isOpen={showModal} onClose={() => setShowModal(false)} title={editItem ? 'Editar Venta' : 'Nueva Venta'} size="xl">
         <div className="space-y-4">
-          <div className="grid grid-cols-4 gap-4">
+          <div className="grid grid-cols-3 gap-4">
             <div className="form-group col-span-2">
               <label className="form-label">Cliente *</label>
-              <select value={form.cliente_id} onChange={(e) => selectCliente(e.target.value)} className="form-input" data-testid="venta-cliente">
+              <select value={form.cliente_id} onChange={(e) => {
+                const c = clientes.find(cl => cl.id === e.target.value);
+                setForm({ ...form, cliente_id: e.target.value, cliente_nombre: c?.nombre || '' });
+              }} className="form-input" data-testid="venta-cliente">
                 <option value="">Seleccionar cliente...</option>
                 {clientes.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
               </select>
             </div>
             <div className="form-group">
-              <label className="form-label">Fecha de venta</label>
-              <input type="date" value={form.fecha} onChange={(e) => setForm(f => ({...f, fecha: e.target.value}))} className="form-input" />
-            </div>
-            <div className="form-group">
-              <label className="form-label">Observaciones</label>
-              <input type="text" value={form.observaciones} onChange={(e) => setForm(f => ({...f, observaciones: e.target.value}))} className="form-input" />
+              <label className="form-label">Fecha de venta *</label>
+              <input type="date" value={form.fecha} onChange={(e) => setForm({ ...form, fecha: e.target.value })} className="form-input" />
             </div>
           </div>
+          <div className="form-group">
+            <label className="form-label">Observaciones</label>
+            <input type="text" value={form.observaciones} onChange={(e) => setForm({ ...form, observaciones: e.target.value })} className="form-input" />
+          </div>
 
-          <div className="border border-border rounded-lg p-4 space-y-3">
-            <h4 className="font-semibold text-sm">Agregar Productos</h4>
-            <div className="flex gap-2 items-end">
-              <div className="flex-1 form-group mb-0 relative">
-                <input
-                  type="text"
-                  value={productoSearch}
-                  onChange={(e) => { setProductoSearch(e.target.value); setShowProductoSugg(true); setItemForm(f => ({...f, producto_id: ''})); }}
-                  onFocus={() => setShowProductoSugg(true)}
-                  onBlur={() => setTimeout(() => setShowProductoSugg(false), 150)}
-                  placeholder="Buscar por código, nombre o variante..."
-                  className="form-input"
-                />
-                {showProductoSugg && productosFiltrados.length > 0 && (
-                  <div className="absolute z-50 top-full left-0 right-0 bg-white border border-border rounded-md shadow-lg mt-1 max-h-48 overflow-y-auto">
-                    {productosFiltrados.map(p => (
-                      <button key={p.id} onMouseDown={() => selectProductoSugg(p)}
-                        className={`w-full text-left px-3 py-2 hover:bg-muted text-sm ${p.stock === 0 ? 'opacity-40 cursor-not-allowed' : ''}`}
-                        disabled={p.stock === 0}>
-                        <span className="font-mono text-xs text-muted-foreground">{p.codigo}</span>
-                        <span className="mx-1">|</span>
-                        <span className="font-medium">{p.nombre}</span>
-                        {p.variante && <span className="text-muted-foreground ml-1">| Variante: {p.variante}</span>}
-                        <span className={`float-right text-xs font-medium ${p.stock <= (p.stock_minimo || 2) ? 'text-red-500' : 'text-green-600'}`}>
-                          Stock: {p.stock}
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-              <div className="w-24 form-group mb-0">
-                <input type="number" value={itemForm.cantidad} min="1" max={itemForm.stock || 9999}
-                  onChange={(e) => setItemForm(f => ({...f, cantidad: parseInt(e.target.value) || 1}))}
-                  className="form-input" placeholder="Cant." />
-                {itemForm.stock > 0 && <p className="text-xs text-muted-foreground mt-0.5 text-center">Disp: {itemForm.stock}</p>}
-              </div>
-              <div className="w-36 form-group mb-0">
-                <input type="number" value={itemForm.precio_unitario}
-                  onChange={(e) => setItemForm(f => ({...f, precio_unitario: parseFloat(e.target.value) || 0}))}
-                  className="form-input" placeholder="Precio venta" />
-              </div>
-              <button onClick={addItem} disabled={!itemForm.producto_id} className="px-3 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-40"><Plus size={18} /></button>
+          <div className="border border-border rounded-lg p-4">
+            <h4 className="font-semibold text-sm mb-3">Agregar Productos</h4>
+            <div className="relative mb-3">
+              <MagnifyingGlass size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+              <input
+                type="text" placeholder="Buscar por código, nombre o variante..."
+                value={prodSearch}
+                onChange={(e) => { setProdSearch(e.target.value); setShowProdSearch(true); }}
+                onFocus={() => setShowProdSearch(true)}
+                className="form-input pl-9"
+                data-testid="venta-prod-search"
+              />
+              {showProdSearch && filteredProds.length > 0 && (
+                <div className="absolute z-50 top-full left-0 right-0 bg-white border border-border rounded-lg shadow-lg max-h-48 overflow-y-auto mt-1">
+                  {filteredProds.map(p => (
+                    <button key={p.id} onClick={() => addItem(p)}
+                      className="w-full text-left px-3 py-2 hover:bg-muted text-sm border-b last:border-0">
+                      <span className="font-medium">{p.codigo} | {p.nombre}</span>
+                      {p.variante && <span className="text-muted-foreground"> | Variante: {p.variante}</span>}
+                      <span className="float-right text-muted-foreground">Stock: {p.stock} | {formatGs(p.precio_con_iva)}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
-
             {form.items.length > 0 && (
-              <table className="data-table mt-2">
-                <thead>
-                  <tr><th>Producto</th><th className="text-center w-20">Cant.</th><th className="text-right w-36">Precio Venta</th><th className="text-right w-28">Costo</th><th className="text-right w-36">Subtotal</th><th className="text-right w-28 text-green-700">Utilidad</th><th className="w-8"></th></tr>
-                </thead>
-                <tbody>
-                  {form.items.map((item, i) => {
-                    const util = (item.precio_unitario - item.costo_unitario) * item.cantidad;
-                    return (
-                      <tr key={i}>
-                        <td>
-                          <span className="font-medium">{item.nombre}</span>
-                          {item.variante && <span className="text-sm ml-1"> | Variante: {item.variante}</span>}
-                          {item.stock_disponible !== undefined && <span className="text-xs text-muted-foreground ml-2">(Stock: {item.stock_disponible})</span>}
-                        </td>
-                        <td className="text-center">
-                          <input type="number" value={item.cantidad} min="1"
-                            onChange={(e) => {
-                              const cant = parseInt(e.target.value) || 1;
-                              const prod = productos.find(p => p.id === item.producto_id);
-                              if (prod && cant > prod.stock && !editItem) return alert(`Stock insuficiente. Disponible: ${prod.stock}`);
-                              updateItem(i, 'cantidad', cant);
-                            }}
-                            className="form-input text-center w-16 py-1 text-sm" />
-                        </td>
-                        <td className="text-right">
-                          <input type="number" value={item.precio_unitario}
-                            onChange={(e) => updateItem(i, 'precio_unitario', parseFloat(e.target.value) || 0)}
-                            className="form-input text-right w-32 py-1 text-sm" />
-                        </td>
-                        <td className="text-right tabular-nums text-muted-foreground text-sm">{formatGs(item.costo_unitario)}</td>
-                        <td className="text-right tabular-nums font-medium">{formatGs(item.precio_unitario * item.cantidad)}</td>
-                        <td className={`text-right tabular-nums font-medium ${util >= 0 ? 'text-green-600' : 'text-red-600'}`}>{formatGs(util)}</td>
-                        <td className="text-center"><button onClick={() => removeItem(i)} className="text-red-500 hover:text-red-700"><X size={16} /></button></td>
-                      </tr>
-                    );
-                  })}
-                  <tr className="font-bold bg-muted">
-                    <td colSpan={4} className="text-right">TOTAL:</td>
-                    <td className="text-right tabular-nums text-lg">{formatGs(total)}</td>
-                    <td className="text-right tabular-nums text-green-600 text-lg">{formatGs(utilidadTotal)}</td>
-                    <td></td>
-                  </tr>
-                </tbody>
-              </table>
+              <div className="overflow-x-auto">
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>Producto</th>
+                      <th className="text-center w-24">Cant.</th>
+                      <th className="text-right w-36">Precio Venta</th>
+                      <th className="text-right w-32">Costo</th>
+                      <th className="text-right w-36">Subtotal</th>
+                      <th className="text-right w-28">Utilidad</th>
+                      <th className="w-10"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {form.items.map((item, i) => {
+                      const subtotal = item.precio_unitario * item.cantidad;
+                      const costoTotal = (item.costo_unitario || 0) * item.cantidad;
+                      const utilidad = subtotal - costoTotal;
+                      return (
+                        <tr key={i}>
+                          <td>
+                            <div className="font-medium text-sm">{item.nombre}</div>
+                            {item.variante && <div className="text-xs text-muted-foreground">Variante: {item.variante}</div>}
+                          </td>
+                          <td className="text-center">
+                            <input type="number" value={item.cantidad} min="1"
+                              onChange={(e) => updateItemQty(i, e.target.value)}
+                              className="form-input text-center p-1 w-20" />
+                          </td>
+                          <td className="text-right">
+                            <input type="number" value={item.precio_unitario} min="0"
+                              onChange={(e) => updateItemPrice(i, e.target.value)}
+                              className="form-input text-right p-1 w-32" />
+                          </td>
+                          <td className="text-right font-mono text-muted-foreground text-sm">{formatGs(item.costo_unitario || 0)}</td>
+                          <td className="text-right font-mono font-medium">{formatGs(subtotal)}</td>
+                          <td className={`text-right font-mono font-medium text-sm ${utilidad >= 0 ? 'text-green-600' : 'text-red-600'}`}>{formatGs(utilidad)}</td>
+                          <td className="text-center">
+                            <button onClick={() => removeItem(i)} className="text-red-500 hover:text-red-700"><X size={16} /></button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    <tr className="font-semibold bg-muted">
+                      <td colSpan={4} className="text-right">TOTAL:</td>
+                      <td className="text-right text-lg font-mono">{formatGs(total)}</td>
+                      <td className="text-right font-mono text-green-600">
+                        {formatGs(form.items.reduce((s, i) => s + (i.precio_unitario - (i.costo_unitario || 0)) * i.cantidad, 0))}
+                      </td>
+                      <td></td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
             )}
           </div>
-
           <div className="flex justify-end gap-3">
             <button onClick={() => setShowModal(false)} className="px-4 py-2 border border-border rounded-md hover:bg-muted">Cancelar</button>
-            <button onClick={handleSave} disabled={!form.cliente_id || form.items.length === 0} className="bg-[#E63946] text-white px-4 py-2 rounded-md hover:bg-[#D90429] disabled:opacity-50" data-testid="save-venta-btn">
-              {editItem ? 'Guardar Cambios' : 'Registrar Venta'}
+            <button onClick={handleSave} disabled={!form.cliente_id || form.items.length === 0}
+              className="bg-[#E63946] text-white px-4 py-2 rounded-md hover:bg-[#D90429] disabled:opacity-50" data-testid="save-venta-btn">
+              {editItem ? 'Actualizar Venta' : 'Registrar Venta'}
             </button>
           </div>
         </div>
@@ -1753,17 +1769,20 @@ function ComprasView({ user }) {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [showModal, setShowModal] = useState(false);
-  const [showDetalleModal, setShowDetalleModal] = useState(null);
+  const [showDetailModal, setShowDetailModal] = useState(false);
   const [editItem, setEditItem] = useState(null);
+  const [selectedCompra, setSelectedCompra] = useState(null);
   const [proveedores, setProveedores] = useState([]);
   const [productos, setProductos] = useState([]);
-  const [productoSearch, setProductoSearch] = useState('');
-  const [showProductoSugg, setShowProductoSugg] = useState(false);
-  const emptyForm = { proveedor_id: '', proveedor_nombre: '', factura: '', fecha: new Date().toISOString().split('T')[0], items: [], observaciones: '' };
-  const [form, setForm] = useState(emptyForm);
-  const [itemForm, setItemForm] = useState({ producto_id: '', cantidad: 1, precio_unitario: 0, variante: '' });
-  const canEdit = hasPermission(user, 'compras', 'editar');
-  const canDelete = hasPermission(user, 'compras', 'eliminar');
+  const [prodSearch, setProdSearch] = useState('');
+  const [showProdSearch, setShowProdSearch] = useState(false);
+  const [form, setForm] = useState({
+    proveedor_id: '', proveedor_nombre: '', fecha: new Date().toISOString().split('T')[0],
+    numero_factura: '', items: [], observaciones: ''
+  });
+  const isAdmin = user?.role === 'admin';
+  const canEdit = hasPermission(user, 'compras', 'editar') || isAdmin;
+  const canDelete = hasPermission(user, 'compras', 'eliminar') || isAdmin;
 
   const loadData = useCallback(() => {
     setLoading(true);
@@ -1772,111 +1791,105 @@ function ComprasView({ user }) {
 
   useEffect(() => { loadData(); }, [loadData]);
 
-  const loadProvProd = async () => {
-    const [provRes, prodRes] = await Promise.all([api.getProveedores({}), api.getProductos({})]);
-    setProveedores(provRes.data.proveedores || []);
-    setProductos(prodRes.data.productos || []);
-  };
-
   const openNew = async () => {
-    await loadProvProd();
+    const [pRes, prodRes] = await Promise.all([api.getProveedores({}), api.getProductos({})]);
+    setProveedores(pRes.data.proveedores || []);
+    setProductos(prodRes.data.productos || []);
     setEditItem(null);
-    setForm(emptyForm);
-    setProductoSearch('');
+    setForm({ proveedor_id: '', proveedor_nombre: '', fecha: new Date().toISOString().split('T')[0], numero_factura: '', items: [], observaciones: '' });
+    setProdSearch('');
     setShowModal(true);
   };
 
   const openEdit = async (c) => {
-    await loadProvProd();
+    const [pRes, prodRes] = await Promise.all([api.getProveedores({}), api.getProductos({})]);
+    setProveedores(pRes.data.proveedores || []);
+    setProductos(prodRes.data.productos || []);
     setEditItem(c);
     setForm({
-      proveedor_id: c.proveedor_id,
-      proveedor_nombre: c.proveedor_nombre,
-      factura: c.factura || '',
+      proveedor_id: c.proveedor_id || '', proveedor_nombre: c.proveedor_nombre || '',
       fecha: c.fecha ? c.fecha.split('T')[0] : new Date().toISOString().split('T')[0],
-      items: c.items || [],
+      numero_factura: c.numero_factura || '',
+      items: (c.items || []).map(i => ({
+        producto_id: i.producto_id, codigo: i.codigo, nombre: i.nombre, variante: i.variante || '',
+        cantidad: i.cantidad, precio_unitario: i.precio_unitario, iva_pct: i.iva_pct || 10
+      })),
       observaciones: c.observaciones || ''
     });
-    setProductoSearch('');
     setShowModal(true);
   };
 
-  const handleDelete = async (id) => {
-    if (!window.confirm('¿Eliminar esta compra? Esto revertirá el stock agregado.')) return;
-    try { await axios.delete(`${API_URL}/api/compras/${id}`, { withCredentials: true }); loadData(); }
-    catch (e) { alert(formatApiError(e.response?.data?.detail)); }
-  };
+  const openDetail = (c) => { setSelectedCompra(c); setShowDetailModal(true); };
 
-  const selectProveedor = (id) => {
-    const p = proveedores.find(pr => pr.id === id);
-    setForm(f => ({...f, proveedor_id: id, proveedor_nombre: p?.nombre || ''}));
-  };
-
-  // Autocomplete productos
-  const productosFiltrados = productoSearch.length >= 1
-    ? productos.filter(p => {
-        const q = productoSearch.toLowerCase();
-        return p.codigo?.toLowerCase().includes(q) || p.nombre?.toLowerCase().includes(q) || p.variante?.toLowerCase().includes(q);
-      }).slice(0, 8)
+  const filteredProds = prodSearch.length >= 1
+    ? productos.filter(p =>
+        p.codigo?.toLowerCase().includes(prodSearch.toLowerCase()) ||
+        p.nombre?.toLowerCase().includes(prodSearch.toLowerCase()) ||
+        p.variante?.toLowerCase().includes(prodSearch.toLowerCase()))
     : [];
 
-  const selectProductoSugg = (prod) => {
-    setItemForm({ producto_id: prod.id, cantidad: 1, precio_unitario: prod.costo || 0, variante: prod.variante || '' });
-    setProductoSearch(`${prod.codigo} | ${prod.nombre}${prod.variante ? ' | Variante: ' + prod.variante : ''}`);
-    setShowProductoSugg(false);
+  const addItem = (prod) => {
+    if (form.items.find(i => i.producto_id === prod.id)) { setProdSearch(''); setShowProdSearch(false); return; }
+    setForm({ ...form, items: [...form.items, {
+      producto_id: prod.id, codigo: prod.codigo, nombre: prod.nombre, variante: prod.variante || '',
+      cantidad: 1, precio_unitario: prod.costo || 0, iva_pct: prod.iva_pct || 10
+    }]});
+    setProdSearch(''); setShowProdSearch(false);
   };
 
-  const addItem = () => {
-    if (!itemForm.producto_id || itemForm.cantidad < 1) return;
-    const prod = productos.find(p => p.id === itemForm.producto_id);
-    if (!prod) return;
-    setForm(f => ({...f, items: [...f.items, {
-      producto_id: prod.id, codigo: prod.codigo, nombre: prod.nombre,
-      variante: prod.variante || '', cantidad: itemForm.cantidad,
-      precio_unitario: itemForm.precio_unitario || prod.costo || 0,
-      iva_pct: prod.iva_pct || 10
-    }]}));
-    setItemForm({ producto_id: '', cantidad: 1, precio_unitario: 0, variante: '' });
-    setProductoSearch('');
+  const removeItem = (idx) => setForm({ ...form, items: form.items.filter((_, i) => i !== idx) });
+  const updateItemQty = (idx, qty) => {
+    const items = [...form.items];
+    items[idx] = { ...items[idx], cantidad: Math.max(1, parseInt(qty) || 1) };
+    setForm({ ...form, items });
+  };
+  const updateItemPrice = (idx, price) => {
+    const items = [...form.items];
+    items[idx] = { ...items[idx], precio_unitario: parseFloat(price) || 0 };
+    setForm({ ...form, items });
   };
 
-  const removeItem = (idx) => setForm(f => ({...f, items: f.items.filter((_, i) => i !== idx)}));
-  const updateItem = (idx, field, val) => setForm(f => ({...f, items: f.items.map((it, i) => i === idx ? {...it, [field]: val} : it)}));
-  const total = form.items.reduce((s, i) => s + (i.precio_unitario * i.cantidad), 0);
+  const total = form.items.reduce((s, i) => s + i.precio_unitario * i.cantidad, 0);
 
   const handleSave = async () => {
     if (!form.proveedor_id || form.items.length === 0) return alert('Seleccione proveedor y agregue productos');
     try {
-      const payload = { ...form, fecha: form.fecha };
-      if (editItem) { await axios.put(`${API_URL}/api/compras/${editItem.id}`, payload, { withCredentials: true }); }
-      else { await api.createCompra(payload); }
+      if (editItem) { await api.updateCompra(editItem.id, form); }
+      else { await api.createCompra(form); }
       setShowModal(false); loadData();
     } catch (e) { alert(formatApiError(e.response?.data?.detail)); }
   };
 
-  const filteredCompras = compras.filter(c =>
-    !search ||
-    c.proveedor_nombre?.toLowerCase().includes(search.toLowerCase()) ||
-    c.factura?.toLowerCase().includes(search.toLowerCase())
-  );
-
-  const itemsLabel = (items) => {
-    if (!items || items.length === 0) return '—';
-    const first = items[0];
-    const nombre = first.nombre + (first.variante ? ` | Variante: ${first.variante}` : '');
-    if (items.length === 1) return nombre;
-    return `${nombre} + ${items.length - 1} más`;
+  const handleDelete = async (id) => {
+    if (!window.confirm('¿Eliminar esta compra? Se revertirá el stock.')) return;
+    try { await api.deleteCompra(id); loadData(); }
+    catch (e) { alert(formatApiError(e.response?.data?.detail)); }
   };
+
+  const getItemsLabel = (items) => {
+    if (!items || items.length === 0) return '-';
+    const first = items[0];
+    const name = first.variante ? `${first.nombre} | Variante: ${first.variante}` : first.nombre;
+    if (items.length === 1) return name;
+    return `${name} + ${items.length - 1} más`;
+  };
+
+  const filteredCompras = compras.filter(c =>
+    !search || c.proveedor_nombre?.toLowerCase().includes(search.toLowerCase()) ||
+    c.numero_factura?.includes(search)
+  );
 
   return (
     <div className="space-y-6" data-testid="compras-view">
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-heading font-semibold">Compras</h2>
-        <button onClick={openNew} className="flex items-center gap-2 px-4 py-2 bg-[#E63946] text-white rounded-lg hover:bg-[#D90429]" data-testid="add-compra-btn"><Plus size={18} /> Nueva Compra</button>
+        <button onClick={openNew} className="flex items-center gap-2 px-4 py-2 bg-[#E63946] text-white rounded-lg hover:bg-[#D90429]" data-testid="add-compra-btn">
+          <Plus size={18} /> Nueva Compra
+        </button>
       </div>
       <div className="relative max-w-md">
         <MagnifyingGlass size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-        <input type="text" placeholder="Buscar por proveedor, factura..." value={search} onChange={(e) => setSearch(e.target.value)} className="form-input pl-10" />
+        <input type="text" placeholder="Buscar por proveedor, factura..." value={search} onChange={(e) => setSearch(e.target.value)} className="form-input pl-10" data-testid="compras-search" />
       </div>
       <div className="bg-white border border-border rounded-md">
         <div className="overflow-x-auto max-h-[600px]">
@@ -1889,14 +1902,14 @@ function ComprasView({ user }) {
               : filteredCompras.length === 0 ? <tr><td colSpan={6} className="text-center py-8">Sin compras registradas</td></tr>
               : filteredCompras.map(c => (
                 <tr key={c.id}>
-                  <td className="text-sm tabular-nums">{new Date(c.fecha).toLocaleDateString('es-PY')}</td>
+                  <td className="whitespace-nowrap">{new Date(c.fecha).toLocaleDateString('es-PY')}</td>
                   <td className="font-medium">{c.proveedor_nombre}</td>
-                  <td className="text-sm">{c.factura || '—'}</td>
-                  <td className="text-sm max-w-xs truncate">{itemsLabel(c.items)}</td>
-                  <td className="text-right price-gs tabular-nums">{formatGs(c.total)}</td>
+                  <td className="text-sm">{c.numero_factura || '-'}</td>
+                  <td className="text-sm max-w-xs truncate">{getItemsLabel(c.items)}</td>
+                  <td className="text-right font-mono">{formatGs(c.total)}</td>
                   <td className="text-center">
                     <div className="flex items-center justify-center gap-1">
-                      <button onClick={() => setShowDetalleModal(c)} className="p-1 hover:bg-blue-50 rounded text-blue-600" title="Ver detalle"><Eye size={16} /></button>
+                      <button onClick={() => openDetail(c)} className="p-1 hover:bg-blue-50 rounded text-blue-600" title="Ver detalle"><Eye size={16} /></button>
                       {canEdit && <button onClick={() => openEdit(c)} className="p-1 hover:bg-yellow-50 rounded text-yellow-600" title="Editar"><Pencil size={16} /></button>}
                       {canDelete && <button onClick={() => handleDelete(c.id)} className="p-1 hover:bg-red-50 rounded text-red-600" title="Eliminar"><Trash size={16} /></button>}
                     </div>
@@ -1908,133 +1921,150 @@ function ComprasView({ user }) {
         </div>
       </div>
 
-      {/* Modal detalle */}
-      <Modal isOpen={!!showDetalleModal} onClose={() => setShowDetalleModal(null)} title="Detalle de Compra" size="xl">
-        {showDetalleModal && (
+      {/* Detail Modal */}
+      <Modal isOpen={showDetailModal} onClose={() => setShowDetailModal(false)} title="Detalle de Compra" size="lg">
+        {selectedCompra && (
           <div className="space-y-4">
-            <div className="grid grid-cols-3 gap-4 bg-muted/40 rounded-lg p-4 text-sm">
-              <div><p className="text-muted-foreground">Proveedor</p><p className="font-semibold">{showDetalleModal.proveedor_nombre}</p></div>
-              <div><p className="text-muted-foreground">Fecha</p><p className="font-semibold">{new Date(showDetalleModal.fecha).toLocaleDateString('es-PY')}</p></div>
-              <div><p className="text-muted-foreground">Factura</p><p className="font-semibold">{showDetalleModal.factura || '—'}</p></div>
+            <div className="grid grid-cols-3 gap-4 text-sm bg-muted/30 rounded-lg p-3">
+              <div><span className="text-muted-foreground">Proveedor</span><div className="font-medium">{selectedCompra.proveedor_nombre}</div></div>
+              <div><span className="text-muted-foreground">Fecha</span><div className="font-medium">{new Date(selectedCompra.fecha).toLocaleDateString('es-PY')}</div></div>
+              {selectedCompra.numero_factura && <div><span className="text-muted-foreground">Factura</span><div className="font-medium">{selectedCompra.numero_factura}</div></div>}
             </div>
-            <table className="data-table">
-              <thead><tr><th>Producto</th><th className="text-center">Cant.</th><th className="text-right">Costo Unit.</th><th className="text-right">Subtotal</th></tr></thead>
-              <tbody>
-                {showDetalleModal.items?.map((item, i) => (
-                  <tr key={i}>
-                    <td>{item.nombre}{item.variante ? <span className="text-sm ml-1"> | Variante: {item.variante}</span> : ''}</td>
-                    <td className="text-center tabular-nums">{item.cantidad}</td>
-                    <td className="text-right tabular-nums">{formatGs(item.precio_unitario)}</td>
-                    <td className="text-right tabular-nums font-medium">{formatGs(item.precio_unitario * item.cantidad)}</td>
+            <div className="overflow-x-auto">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Producto</th>
+                    <th className="text-center w-16">Cant.</th>
+                    <th className="text-right w-36">Costo Unit.</th>
+                    <th className="text-right w-36">Subtotal</th>
                   </tr>
-                ))}
-                <tr className="font-bold bg-muted">
-                  <td colSpan={3} className="text-right">TOTAL:</td>
-                  <td className="text-right text-lg tabular-nums">{formatGs(showDetalleModal.total)}</td>
-                </tr>
-              </tbody>
-            </table>
-            {showDetalleModal.observaciones && <p className="text-sm text-muted-foreground">Obs: {showDetalleModal.observaciones}</p>}
+                </thead>
+                <tbody>
+                  {(selectedCompra.items || []).map((item, i) => (
+                    <tr key={i}>
+                      <td><div className="font-medium">{item.nombre}</div>{item.variante && <div className="text-xs text-muted-foreground">Variante: {item.variante}</div>}</td>
+                      <td className="text-center">{item.cantidad}</td>
+                      <td className="text-right font-mono">{formatGs(item.precio_unitario)}</td>
+                      <td className="text-right font-mono font-medium">{formatGs(item.precio_unitario * item.cantidad)}</td>
+                    </tr>
+                  ))}
+                  <tr className="font-semibold bg-muted">
+                    <td colSpan={3} className="text-right">TOTAL:</td>
+                    <td className="text-right text-lg font-mono">{formatGs(selectedCompra.total)}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            {selectedCompra.observaciones && <p className="text-sm text-muted-foreground">Obs: {selectedCompra.observaciones}</p>}
           </div>
         )}
       </Modal>
 
-      {/* Modal crear/editar */}
+      {/* Create/Edit Modal */}
       <Modal isOpen={showModal} onClose={() => setShowModal(false)} title={editItem ? 'Editar Compra' : 'Nueva Compra'} size="xl">
         <div className="space-y-4">
-          <div className="grid grid-cols-4 gap-4">
+          <div className="grid grid-cols-3 gap-4">
             <div className="form-group col-span-2">
               <label className="form-label">Proveedor *</label>
-              <select value={form.proveedor_id} onChange={(e) => selectProveedor(e.target.value)} className="form-input" data-testid="compra-proveedor">
-                <option value="">Seleccionar...</option>
+              <select value={form.proveedor_id} onChange={(e) => {
+                const p = proveedores.find(pr => pr.id === e.target.value);
+                setForm({ ...form, proveedor_id: e.target.value, proveedor_nombre: p?.nombre || '' });
+              }} className="form-input" data-testid="compra-proveedor">
+                <option value="">Seleccionar proveedor...</option>
                 {proveedores.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
               </select>
             </div>
             <div className="form-group">
-              <label className="form-label">Fecha de compra</label>
-              <input type="date" value={form.fecha} onChange={(e) => setForm(f => ({...f, fecha: e.target.value}))} className="form-input" />
+              <label className="form-label">Fecha de compra *</label>
+              <input type="date" value={form.fecha} onChange={(e) => setForm({ ...form, fecha: e.target.value })} className="form-input" />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="form-group">
+              <label className="form-label">Número de factura</label>
+              <input type="text" value={form.numero_factura} onChange={(e) => setForm({ ...form, numero_factura: e.target.value })} className="form-input" />
             </div>
             <div className="form-group">
-              <label className="form-label">Nro. Factura</label>
-              <input type="text" value={form.factura} onChange={(e) => setForm(f => ({...f, factura: e.target.value}))} className="form-input" />
+              <label className="form-label">Observaciones</label>
+              <input type="text" value={form.observaciones} onChange={(e) => setForm({ ...form, observaciones: e.target.value })} className="form-input" />
             </div>
           </div>
 
-          <div className="border border-border rounded-lg p-4 space-y-3">
-            <h4 className="font-semibold text-sm">Agregar Productos</h4>
-            <div className="flex gap-2 items-end">
-              <div className="flex-1 form-group mb-0 relative">
-                <input
-                  type="text"
-                  value={productoSearch}
-                  onChange={(e) => { setProductoSearch(e.target.value); setShowProductoSugg(true); setItemForm(f => ({...f, producto_id: ''})); }}
-                  onFocus={() => setShowProductoSugg(true)}
-                  onBlur={() => setTimeout(() => setShowProductoSugg(false), 150)}
-                  placeholder="Buscar por código, nombre o variante..."
-                  className="form-input"
-                />
-                {showProductoSugg && productosFiltrados.length > 0 && (
-                  <div className="absolute z-50 top-full left-0 right-0 bg-white border border-border rounded-md shadow-lg mt-1 max-h-48 overflow-y-auto">
-                    {productosFiltrados.map(p => (
-                      <button key={p.id} onMouseDown={() => selectProductoSugg(p)} className="w-full text-left px-3 py-2 hover:bg-muted text-sm">
-                        <span className="font-mono text-xs text-muted-foreground">{p.codigo}</span>
-                        <span className="mx-1">|</span>
-                        <span className="font-medium">{p.nombre}</span>
-                        {p.variante && <span className="text-muted-foreground ml-1">| Variante: {p.variante}</span>}
-                        <span className="float-right text-muted-foreground">{formatGs(p.costo)}</span>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-              <div className="w-24 form-group mb-0">
-                <input type="number" value={itemForm.cantidad} onChange={(e) => setItemForm(f => ({...f, cantidad: parseInt(e.target.value) || 1}))} className="form-input" min="1" placeholder="Cant." />
-              </div>
-              <div className="w-36 form-group mb-0">
-                <input type="number" value={itemForm.precio_unitario} onChange={(e) => setItemForm(f => ({...f, precio_unitario: parseFloat(e.target.value) || 0}))} className="form-input" placeholder="Costo unit." />
-              </div>
-              <button onClick={addItem} disabled={!itemForm.producto_id} className="px-3 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-40"><Plus size={18} /></button>
-            </div>
-
-            {form.items.length > 0 && (
-              <table className="data-table mt-2">
-                <thead><tr><th>Producto</th><th className="text-center w-20">Cant.</th><th className="text-right w-36">Costo Unit.</th><th className="text-right w-36">Subtotal</th><th className="w-8"></th></tr></thead>
-                <tbody>
-                  {form.items.map((item, i) => (
-                    <tr key={i}>
-                      <td>
-                        <span className="font-medium">{item.nombre}</span>
-                        {item.variante && <span className="text-sm ml-1"> | Variante: {item.variante}</span>}
-                      </td>
-                      <td className="text-center">
-                        <input type="number" value={item.cantidad} min="1" onChange={(e) => updateItem(i, 'cantidad', parseInt(e.target.value) || 1)} className="form-input text-center w-16 py-1 text-sm" />
-                      </td>
-                      <td className="text-right">
-                        <input type="number" value={item.precio_unitario} onChange={(e) => updateItem(i, 'precio_unitario', parseFloat(e.target.value) || 0)} className="form-input text-right w-32 py-1 text-sm" />
-                      </td>
-                      <td className="text-right tabular-nums font-medium">{formatGs(item.precio_unitario * item.cantidad)}</td>
-                      <td className="text-center"><button onClick={() => removeItem(i)} className="text-red-500 hover:text-red-700"><X size={16} /></button></td>
-                    </tr>
+          <div className="border border-border rounded-lg p-4">
+            <h4 className="font-semibold text-sm mb-3">Agregar Productos</h4>
+            <div className="relative mb-3">
+              <MagnifyingGlass size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+              <input
+                type="text" placeholder="Buscar por código, nombre o variante..."
+                value={prodSearch}
+                onChange={(e) => { setProdSearch(e.target.value); setShowProdSearch(true); }}
+                onFocus={() => setShowProdSearch(true)}
+                className="form-input pl-9"
+              />
+              {showProdSearch && filteredProds.length > 0 && (
+                <div className="absolute z-50 top-full left-0 right-0 bg-white border border-border rounded-lg shadow-lg max-h-48 overflow-y-auto mt-1">
+                  {filteredProds.map(p => (
+                    <button key={p.id} onClick={() => addItem(p)}
+                      className="w-full text-left px-3 py-2 hover:bg-muted text-sm border-b last:border-0">
+                      <span className="font-medium">{p.codigo} | {p.nombre}</span>
+                      {p.variante && <span className="text-muted-foreground"> | Variante: {p.variante}</span>}
+                      <span className="float-right text-muted-foreground">Costo: {formatGs(p.costo || 0)}</span>
+                    </button>
                   ))}
-                  <tr className="font-bold bg-muted">
-                    <td colSpan={3} className="text-right">TOTAL:</td>
-                    <td className="text-right text-lg tabular-nums">{formatGs(total)}</td>
-                    <td></td>
-                  </tr>
-                </tbody>
-              </table>
+                </div>
+              )}
+            </div>
+            {form.items.length > 0 && (
+              <div className="overflow-x-auto">
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>Producto</th>
+                      <th className="text-center w-20">Cant.</th>
+                      <th className="text-right w-44">Costo Unit.</th>
+                      <th className="text-right w-36">Subtotal</th>
+                      <th className="w-10"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {form.items.map((item, i) => (
+                      <tr key={i}>
+                        <td>
+                          <div className="font-medium text-sm">{item.nombre}</div>
+                          {item.variante && <div className="text-xs text-muted-foreground">Variante: {item.variante}</div>}
+                        </td>
+                        <td className="text-center">
+                          <input type="number" value={item.cantidad} min="1"
+                            onChange={(e) => updateItemQty(i, e.target.value)}
+                            className="form-input text-center p-1 w-16" />
+                        </td>
+                        <td className="text-right">
+                          <input type="number" value={item.precio_unitario} min="0"
+                            onChange={(e) => updateItemPrice(i, e.target.value)}
+                            className="form-input text-right p-1 w-36" />
+                        </td>
+                        <td className="text-right font-mono font-medium">{formatGs(item.precio_unitario * item.cantidad)}</td>
+                        <td className="text-center">
+                          <button onClick={() => removeItem(i)} className="text-red-500 hover:text-red-700"><X size={16} /></button>
+                        </td>
+                      </tr>
+                    ))}
+                    <tr className="font-semibold bg-muted">
+                      <td colSpan={3} className="text-right">TOTAL:</td>
+                      <td className="text-right text-lg font-mono">{formatGs(total)}</td>
+                      <td></td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
             )}
           </div>
-
-          <div className="form-group">
-            <label className="form-label">Observaciones</label>
-            <input type="text" value={form.observaciones} onChange={(e) => setForm(f => ({...f, observaciones: e.target.value}))} className="form-input" />
-          </div>
-
           <div className="flex justify-end gap-3">
             <button onClick={() => setShowModal(false)} className="px-4 py-2 border border-border rounded-md hover:bg-muted">Cancelar</button>
-            <button onClick={handleSave} disabled={!form.proveedor_id || form.items.length === 0} className="bg-[#E63946] text-white px-4 py-2 rounded-md hover:bg-[#D90429] disabled:opacity-50" data-testid="save-compra-btn">
-              {editItem ? 'Guardar Cambios' : 'Registrar Compra'}
+            <button onClick={handleSave} disabled={!form.proveedor_id || form.items.length === 0}
+              className="bg-[#E63946] text-white px-4 py-2 rounded-md hover:bg-[#D90429] disabled:opacity-50" data-testid="save-compra-btn">
+              {editItem ? 'Actualizar Compra' : 'Registrar Compra'}
             </button>
           </div>
         </div>
@@ -2044,71 +2074,370 @@ function ComprasView({ user }) {
 }
 
 // ==================== CLIENTES VIEW ====================
+const TIPOS_CLIENTE = ['Odontólogo', 'Clínica', 'Laboratorio', 'Otro'];
+
 function ClientesView({ user }) {
   const [clientes, setClientes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [showModal, setShowModal] = useState(false);
-  const [editItem, setEditItem] = useState(null);
-  const [form, setForm] = useState({ nombre: '', ruc: '', telefono: '', direccion: '', ciudad: '', tipo: 'Odontólogo' });
-  const canCreate = hasPermission(user, 'clientes', 'crear');
-  const canEdit = hasPermission(user, 'clientes', 'editar');
-  const canDelete = hasPermission(user, 'clientes', 'eliminar');
+  // Filtros lista
+  const [showFilters, setShowFilters] = useState(false);
+  const [filterFechaDesde, setFilterFechaDesde] = useState('');
+  const [filterFechaHasta, setFilterFechaHasta] = useState('');
+  const [filterTotalMin, setFilterTotalMin]     = useState('');
+  const [filterCantMin, setFilterCantMin]       = useState('');
+  const [filterCiudad, setFilterCiudad]         = useState('');
+  const [filterTipo, setFilterTipo]             = useState('');
+  // Modales
+  const [showModal, setShowModal]       = useState(false);
+  const [showHistorial, setShowHistorial] = useState(false);
+  const [editItem, setEditItem]         = useState(null);
+  const [selectedCliente, setSelectedCliente] = useState(null);
+  const [historialVentas, setHistorialVentas] = useState([]);
+  const [historialStats, setHistorialStats]   = useState({});
+  const [loadingHistorial, setLoadingHistorial] = useState(false);
+  // Filtros historial
+  const [hFechaDesde, setHFechaDesde] = useState('');
+  const [hFechaHasta, setHFechaHasta] = useState('');
+  const [hTotalMin, setHTotalMin]     = useState('');
+  const [hCiudad, setHCiudad]         = useState('');
+  const [hTipo, setHTipo]             = useState('');
 
-  const loadData = useCallback(() => { setLoading(true); api.getClientes({}).then(r => setClientes(r.data.clientes || [])).finally(() => setLoading(false)); }, []);
+  const [form, setForm] = useState({ nombre: '', ruc: '', telefono: '', direccion: '', ciudad: '', tipo: 'Odontólogo' });
+
+  const isAdmin  = user?.role === 'admin';
+  const canCreate = hasPermission(user, 'clientes', 'crear')    || isAdmin;
+  const canEdit   = hasPermission(user, 'clientes', 'editar')   || isAdmin;
+  const canDelete = hasPermission(user, 'clientes', 'eliminar') || isAdmin;
+
+  const loadData = useCallback(() => {
+    setLoading(true);
+    api.getClientes({ search }).then(r => setClientes(r.data.clientes || [])).finally(() => setLoading(false));
+  }, [search]);
   useEffect(() => { loadData(); }, [loadData]);
 
-  const openNew = () => { setEditItem(null); setForm({ nombre: '', ruc: '', telefono: '', direccion: '', ciudad: '', tipo: 'Odontólogo' }); setShowModal(true); };
+  const openNew  = () => { setEditItem(null); setForm({ nombre: '', ruc: '', telefono: '', direccion: '', ciudad: '', tipo: 'Odontólogo' }); setShowModal(true); };
   const openEdit = (c) => { setEditItem(c); setForm({ nombre: c.nombre, ruc: c.ruc || '', telefono: c.telefono || '', direccion: c.direccion || '', ciudad: c.ciudad || '', tipo: c.tipo || 'Odontólogo' }); setShowModal(true); };
 
   const handleSave = async () => {
+    if (!form.nombre) return alert('El nombre es obligatorio');
     try {
       if (editItem) { await api.updateCliente(editItem.id, form); }
-      else { await api.createCliente(form); }
+      else          { await api.createCliente(form); }
       setShowModal(false); loadData();
     } catch (e) { alert(formatApiError(e.response?.data?.detail)); }
   };
 
   const handleDelete = async (id) => {
     if (!window.confirm('¿Eliminar este cliente?')) return;
-    try { await api.deleteCliente(id); loadData(); } catch (e) { alert(formatApiError(e.response?.data?.detail)); }
+    try { await api.deleteCliente(id); loadData(); }
+    catch (e) { alert(formatApiError(e.response?.data?.detail)); }
+  };
+
+  const openHistorial = async (cliente, params = {}) => {
+    setSelectedCliente(cliente);
+    setShowHistorial(true);
+    setLoadingHistorial(true);
+    setHistorialVentas([]);
+    try {
+      const r = await api.getClienteVentas(cliente.id, params);
+      setHistorialVentas(r.data.ventas || []);
+      setHistorialStats({ cantidad: r.data.cantidad_ventas, total: r.data.total_comprado });
+    } catch (e) { alert(formatApiError(e.response?.data?.detail || e.message)); }
+    finally { setLoadingHistorial(false); }
+  };
+
+  const aplicarFiltrosHistorial = () => {
+    if (!selectedCliente) return;
+    openHistorial(selectedCliente, {
+      fecha_desde: hFechaDesde || undefined,
+      fecha_hasta: hFechaHasta || undefined,
+      total_min:   hTotalMin   || undefined,
+      ciudad:      hCiudad     || undefined,
+      tipo:        hTipo       || undefined,
+    });
+  };
+
+  // Ciudades y tipos únicos para selects de filtro
+  const ciudades = [...new Set(clientes.map(c => c.ciudad).filter(Boolean))].sort();
+  const tipos    = [...new Set(clientes.map(c => c.tipo).filter(Boolean))].sort();
+
+  const filtrados = clientes.filter(c => {
+    if (filterFechaDesde && c.ultima_venta_fecha && c.ultima_venta_fecha < filterFechaDesde) return false;
+    if (filterFechaHasta && c.ultima_venta_fecha && c.ultima_venta_fecha > filterFechaHasta + 'T23:59:59') return false;
+    if (filterTotalMin && (c.total_comprado || 0) < parseFloat(filterTotalMin)) return false;
+    if (filterCantMin  && (c.cantidad_compras || 0) < parseInt(filterCantMin))  return false;
+    if (filterCiudad   && c.ciudad !== filterCiudad)  return false;
+    if (filterTipo     && c.tipo   !== filterTipo)    return false;
+    return true;
+  });
+
+  const hasActiveFilters = filterFechaDesde || filterFechaHasta || filterTotalMin || filterCantMin || filterCiudad || filterTipo;
+
+  const limpiarFiltros = () => {
+    setFilterFechaDesde(''); setFilterFechaHasta('');
+    setFilterTotalMin(''); setFilterCantMin('');
+    setFilterCiudad(''); setFilterTipo('');
   };
 
   return (
     <div className="space-y-6" data-testid="clientes-view">
+
+      {/* Header */}
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-heading font-semibold">Clientes</h2>
-        {canCreate && <button onClick={openNew} className="flex items-center gap-2 px-4 py-2 bg-[#E63946] text-white rounded-lg hover:bg-[#D90429]" data-testid="add-cliente-btn"><Plus size={18} /> Nuevo Cliente</button>}
+        {canCreate && (
+          <button onClick={openNew} className="flex items-center gap-2 px-4 py-2 bg-[#E63946] text-white rounded-lg hover:bg-[#D90429]" data-testid="add-cliente-btn">
+            <Plus size={18} /> Nuevo Cliente
+          </button>
+        )}
       </div>
-      <div className="relative max-w-md">
-        <MagnifyingGlass size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-        <input type="text" placeholder="Buscar por nombre, RUC, ciudad..." value={search} onChange={(e) => setSearch(e.target.value)} className="form-input pl-10" data-testid="clientes-search" />
+
+      {/* Búsqueda + Filtros */}
+      <div className="flex gap-3 items-center">
+        <div className="relative flex-1 max-w-md">
+          <MagnifyingGlass size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+          <input type="text" placeholder="Buscar por nombre, RUC, ciudad..." value={search}
+            onChange={e => setSearch(e.target.value)} className="form-input pl-10" data-testid="clientes-search" />
+        </div>
+        <button onClick={() => setShowFilters(v => !v)}
+          className={`flex items-center gap-2 px-3 py-2 border rounded-lg text-sm transition-colors ${showFilters || hasActiveFilters ? 'bg-[#E63946] text-white border-[#E63946]' : 'border-border hover:bg-muted'}`}>
+          <Funnel size={16} /> Filtros {hasActiveFilters ? '●' : ''}
+        </button>
       </div>
+
+      {/* Panel filtros */}
+      {showFilters && (
+        <div className="bg-white border border-border rounded-lg p-4 grid grid-cols-2 md:grid-cols-3 gap-4">
+          <div className="form-group">
+            <label className="form-label">Última venta desde</label>
+            <input type="date" value={filterFechaDesde} onChange={e => setFilterFechaDesde(e.target.value)} className="form-input" />
+          </div>
+          <div className="form-group">
+            <label className="form-label">Última venta hasta</label>
+            <input type="date" value={filterFechaHasta} onChange={e => setFilterFechaHasta(e.target.value)} className="form-input" />
+          </div>
+          <div className="form-group">
+            <label className="form-label">Total comprado mín. (Gs.)</label>
+            <input type="number" value={filterTotalMin} onChange={e => setFilterTotalMin(e.target.value)} className="form-input" placeholder="0" min="0" />
+          </div>
+          <div className="form-group">
+            <label className="form-label">Cantidad compras mín.</label>
+            <input type="number" value={filterCantMin} onChange={e => setFilterCantMin(e.target.value)} className="form-input" placeholder="0" min="0" />
+          </div>
+          <div className="form-group">
+            <label className="form-label">Ciudad</label>
+            <select value={filterCiudad} onChange={e => setFilterCiudad(e.target.value)} className="form-input">
+              <option value="">Todas</option>
+              {ciudades.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </div>
+          <div className="form-group">
+            <label className="form-label">Tipo</label>
+            <select value={filterTipo} onChange={e => setFilterTipo(e.target.value)} className="form-input">
+              <option value="">Todos</option>
+              {tipos.map(t => <option key={t} value={t}>{t}</option>)}
+            </select>
+          </div>
+          {hasActiveFilters && (
+            <div className="col-span-full flex justify-end">
+              <button onClick={limpiarFiltros} className="text-sm text-[#E63946] hover:underline">Limpiar filtros</button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Tabla principal */}
       <div className="bg-white border border-border rounded-md">
-        <table className="data-table">
-          <thead><tr><th>Nombre</th><th>RUC</th><th>Teléfono</th><th>Ciudad</th><th>Tipo</th>{(canEdit || canDelete) && <th className="text-center">Acciones</th>}</tr></thead>
-          <tbody>
-            {loading ? <tr><td colSpan={6} className="text-center py-8">Cargando...</td></tr>
-            : clientes.length === 0 ? <tr><td colSpan={6} className="text-center py-8">Sin clientes</td></tr>
-            : clientes.filter(c => !search || c.nombre?.toLowerCase().includes(search.toLowerCase()) || c.ruc?.includes(search) || c.ciudad?.toLowerCase().includes(search.toLowerCase())).map(c => (
-              <tr key={c.id}><td className="font-medium">{c.nombre}</td><td>{c.ruc || '-'}</td><td>{c.telefono || '-'}</td><td>{c.ciudad || '-'}</td><td><span className="badge bg-blue-100 text-blue-800">{c.tipo}</span></td>
-              {(canEdit || canDelete) && <td className="text-center"><div className="flex items-center justify-center gap-1">{canEdit && <button onClick={() => openEdit(c)} className="p-1 hover:bg-yellow-50 rounded text-yellow-600"><Pencil size={16} /></button>}{canDelete && <button onClick={() => handleDelete(c.id)} className="p-1 hover:bg-red-50 rounded text-red-600"><Trash size={16} /></button>}</div></td>}</tr>
-            ))}
-          </tbody>
-        </table>
+        <div className="overflow-x-auto max-h-[600px]">
+          <table className="data-table">
+            <thead className="sticky top-0 bg-white">
+              <tr>
+                <th>Nombre</th>
+                <th>Ciudad</th>
+                <th>Tipo</th>
+                <th className="text-center">Cant. Compras</th>
+                <th className="text-right">Total Comprado</th>
+                <th className="text-right">Última Venta</th>
+                <th className="text-right">Monto Últ. Venta</th>
+                <th>Último Producto</th>
+                <th className="text-center">Acciones</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading
+                ? <tr><td colSpan={9} className="text-center py-8 text-muted-foreground">Cargando...</td></tr>
+                : filtrados.length === 0
+                ? <tr><td colSpan={9} className="text-center py-8 text-muted-foreground">Sin clientes</td></tr>
+                : filtrados.map(c => (
+                  <tr key={c.id}>
+                    <td>
+                      <div className="font-medium">{c.nombre}</div>
+                      {c.ruc && <div className="text-xs text-muted-foreground">RUC: {c.ruc}</div>}
+                      {c.telefono && <div className="text-xs text-muted-foreground">{c.telefono}</div>}
+                    </td>
+                    <td className="text-sm">{c.ciudad || '-'}</td>
+                    <td>
+                      <span className="badge" style={{ background: '#dbeafe', color: '#1e40af' }}>{c.tipo || '-'}</span>
+                    </td>
+                    <td className="text-center">
+                      {c.cantidad_compras > 0
+                        ? <span className="badge badge-success">{c.cantidad_compras}</span>
+                        : <span className="text-muted-foreground text-sm">0</span>}
+                    </td>
+                    <td className="text-right font-mono font-semibold">{c.total_comprado ? formatGs(c.total_comprado) : <span className="text-muted-foreground">-</span>}</td>
+                    <td className="text-right text-sm">
+                      {c.ultima_venta_fecha
+                        ? new Date(c.ultima_venta_fecha).toLocaleDateString('es-PY')
+                        : <span className="text-muted-foreground">-</span>}
+                    </td>
+                    <td className="text-right font-mono text-sm">
+                      {c.ultima_venta_monto ? formatGs(c.ultima_venta_monto) : <span className="text-muted-foreground">-</span>}
+                    </td>
+                    <td className="text-sm max-w-[180px] truncate" title={c.ultimo_producto}>
+                      {c.ultimo_producto || <span className="text-muted-foreground">-</span>}
+                    </td>
+                    <td className="text-center">
+                      <div className="flex items-center justify-center gap-1">
+                        <button onClick={() => openHistorial(c)} className="p-1 hover:bg-blue-50 rounded text-blue-600" title="Ver historial de ventas"><Eye size={16} /></button>
+                        {canEdit   && <button onClick={() => openEdit(c)}       className="p-1 hover:bg-yellow-50 rounded text-yellow-600" title="Editar"><Pencil size={16} /></button>}
+                        {canDelete && <button onClick={() => handleDelete(c.id)} className="p-1 hover:bg-red-50 rounded text-red-600"    title="Eliminar"><Trash size={16} /></button>}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+            </tbody>
+          </table>
+        </div>
       </div>
+
+      {/* Modal Historial de Ventas */}
+      <Modal isOpen={showHistorial} onClose={() => setShowHistorial(false)} title="Historial de Ventas" size="xl">
+        {selectedCliente && (
+          <div className="space-y-4">
+            {/* Info cliente */}
+            <div className="grid grid-cols-3 gap-4 text-sm bg-muted/30 rounded-lg p-3">
+              <div>
+                <span className="text-muted-foreground">Cliente</span>
+                <div className="font-semibold">{selectedCliente.nombre}</div>
+                <div className="text-xs text-muted-foreground">{selectedCliente.ciudad} · {selectedCliente.tipo}</div>
+              </div>
+              <div>
+                <span className="text-muted-foreground">Ventas totales</span>
+                <div className="font-semibold text-lg text-blue-600">{historialStats.cantidad ?? selectedCliente.cantidad_compras ?? 0}</div>
+              </div>
+              <div>
+                <span className="text-muted-foreground">Total comprado</span>
+                <div className="font-semibold font-mono text-[#E63946]">{formatGs(historialStats.total ?? selectedCliente.total_comprado ?? 0)}</div>
+              </div>
+            </div>
+
+            {/* Filtros historial */}
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3 p-3 bg-muted/20 rounded-lg">
+              <div className="form-group">
+                <label className="form-label text-xs">Desde</label>
+                <input type="date" value={hFechaDesde} onChange={e => setHFechaDesde(e.target.value)} className="form-input" />
+              </div>
+              <div className="form-group">
+                <label className="form-label text-xs">Hasta</label>
+                <input type="date" value={hFechaHasta} onChange={e => setHFechaHasta(e.target.value)} className="form-input" />
+              </div>
+              <div className="form-group">
+                <label className="form-label text-xs">Total mín. (Gs.)</label>
+                <input type="number" value={hTotalMin} onChange={e => setHTotalMin(e.target.value)} className="form-input" placeholder="0" min="0" />
+              </div>
+              <div className="form-group">
+                <label className="form-label text-xs">Ciudad</label>
+                <input type="text" value={hCiudad} onChange={e => setHCiudad(e.target.value)} className="form-input" placeholder="Ej: Asunción" />
+              </div>
+              <div className="form-group">
+                <label className="form-label text-xs">Tipo cliente</label>
+                <select value={hTipo} onChange={e => setHTipo(e.target.value)} className="form-input">
+                  <option value="">Todos</option>
+                  {TIPOS_CLIENTE.map(t => <option key={t} value={t}>{t}</option>)}
+                </select>
+              </div>
+              <div className="flex items-end gap-2">
+                <button onClick={() => { setHFechaDesde(''); setHFechaHasta(''); setHTotalMin(''); setHCiudad(''); setHTipo(''); openHistorial(selectedCliente); }}
+                  className="text-sm px-3 py-1.5 border border-border rounded hover:bg-muted">Limpiar</button>
+                <button onClick={aplicarFiltrosHistorial}
+                  className="text-sm px-3 py-1.5 bg-[#E63946] text-white rounded hover:bg-[#D90429]">Aplicar</button>
+              </div>
+            </div>
+
+            {/* Tabla historial */}
+            {loadingHistorial ? (
+              <div className="text-center py-8 text-muted-foreground">Cargando historial...</div>
+            ) : historialVentas.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">Sin ventas registradas para este cliente</div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>Fecha</th>
+                      <th>Productos</th>
+                      <th className="text-center">Ítems</th>
+                      <th className="text-right">Total</th>
+                      <th className="text-right">Utilidad</th>
+                      <th>Observaciones</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {historialVentas.map((v, i) => {
+                      const firstItem = (v.items || [])[0];
+                      const productoLabel = firstItem
+                        ? `${firstItem.nombre}${firstItem.variante ? ' | ' + firstItem.variante : ''}${v.items.length > 1 ? ` +${v.items.length - 1} más` : ''}`
+                        : '-';
+                      return (
+                        <tr key={i}>
+                          <td className="whitespace-nowrap">{v.fecha ? new Date(v.fecha).toLocaleDateString('es-PY') : '-'}</td>
+                          <td className="text-sm max-w-[200px] truncate" title={productoLabel}>{productoLabel}</td>
+                          <td className="text-center">
+                            <span className="badge badge-success">{(v.items || []).length}</span>
+                          </td>
+                          <td className="text-right font-mono font-semibold">{formatGs(v.total || 0)}</td>
+                          <td className="text-right font-mono text-green-600">{formatGs(v.utilidad || 0)}</td>
+                          <td className="text-sm text-muted-foreground">{v.observaciones || '-'}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                  <tfoot className="bg-muted font-semibold">
+                    <tr>
+                      <td colSpan={3} className="text-right px-4 py-2">TOTAL:</td>
+                      <td className="text-right font-mono px-4 py-2 text-[#E63946]">{formatGs(historialStats.total || 0)}</td>
+                      <td colSpan={2}></td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+      </Modal>
+
+      {/* Modal Crear / Editar Cliente */}
       <Modal isOpen={showModal} onClose={() => setShowModal(false)} title={editItem ? 'Editar Cliente' : 'Nuevo Cliente'} size="md">
         <div className="space-y-4">
-          <div className="form-group"><label className="form-label">Nombre *</label><input type="text" value={form.nombre} onChange={(e) => setForm({...form, nombre: e.target.value})} className="form-input" data-testid="cliente-nombre" /></div>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="form-group"><label className="form-label">RUC</label><input type="text" value={form.ruc} onChange={(e) => setForm({...form, ruc: e.target.value})} className="form-input" /></div>
-            <div className="form-group"><label className="form-label">Teléfono</label><input type="text" value={form.telefono} onChange={(e) => setForm({...form, telefono: e.target.value})} className="form-input" /></div>
+          <div className="form-group">
+            <label className="form-label">Nombre *</label>
+            <input type="text" value={form.nombre} onChange={e => setForm({...form, nombre: e.target.value})} className="form-input" data-testid="cliente-nombre" />
           </div>
           <div className="grid grid-cols-2 gap-4">
-            <div className="form-group"><label className="form-label">Ciudad</label><input type="text" value={form.ciudad} onChange={(e) => setForm({...form, ciudad: e.target.value})} className="form-input" /></div>
-            <div className="form-group"><label className="form-label">Tipo</label><select value={form.tipo} onChange={(e) => setForm({...form, tipo: e.target.value})} className="form-input"><option>Odontólogo</option><option>Clínica</option><option>Laboratorio</option><option>Otro</option></select></div>
+            <div className="form-group"><label className="form-label">RUC</label><input type="text" value={form.ruc} onChange={e => setForm({...form, ruc: e.target.value})} className="form-input" /></div>
+            <div className="form-group"><label className="form-label">Teléfono</label><input type="text" value={form.telefono} onChange={e => setForm({...form, telefono: e.target.value})} className="form-input" /></div>
           </div>
-          <div className="form-group"><label className="form-label">Dirección</label><input type="text" value={form.direccion} onChange={(e) => setForm({...form, direccion: e.target.value})} className="form-input" /></div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="form-group"><label className="form-label">Ciudad</label><input type="text" value={form.ciudad} onChange={e => setForm({...form, ciudad: e.target.value})} className="form-input" /></div>
+            <div className="form-group">
+              <label className="form-label">Tipo</label>
+              <select value={form.tipo} onChange={e => setForm({...form, tipo: e.target.value})} className="form-input">
+                {TIPOS_CLIENTE.map(t => <option key={t} value={t}>{t}</option>)}
+              </select>
+            </div>
+          </div>
+          <div className="form-group"><label className="form-label">Dirección</label><input type="text" value={form.direccion} onChange={e => setForm({...form, direccion: e.target.value})} className="form-input" /></div>
           <div className="flex justify-end gap-3">
             <button onClick={() => setShowModal(false)} className="px-4 py-2 border border-border rounded-md hover:bg-muted">Cancelar</button>
             <button onClick={handleSave} className="bg-[#E63946] text-white px-4 py-2 rounded-md hover:bg-[#D90429]" data-testid="save-cliente-btn">{editItem ? 'Actualizar' : 'Crear'}</button>
@@ -2124,20 +2453,43 @@ function ProveedoresView({ user }) {
   const [proveedores, setProveedores] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  // Filtros comerciales
+  const [filterFechaDesde, setFilterFechaDesde] = useState('');
+  const [filterFechaHasta, setFilterFechaHasta] = useState('');
+  const [filterTotalMin, setFilterTotalMin] = useState('');
+  const [filterCantMin, setFilterCantMin] = useState('');
+  const [showFilters, setShowFilters] = useState(false);
+  // Modales
   const [showModal, setShowModal] = useState(false);
+  const [showHistorial, setShowHistorial] = useState(false);
   const [editItem, setEditItem] = useState(null);
-  const [form, setForm] = useState({ nombre: '', ruc: '', direccion: '', contacto: '', telefono: '' });
-  const canCreate = hasPermission(user, 'proveedores', 'crear');
-  const canEdit = hasPermission(user, 'proveedores', 'editar');
-  const canDelete = hasPermission(user, 'proveedores', 'eliminar');
+  const [selectedProv, setSelectedProv] = useState(null);
+  const [historialCompras, setHistorialCompras] = useState([]);
+  const [historialStats, setHistorialStats] = useState({});
+  const [loadingHistorial, setLoadingHistorial] = useState(false);
+  // Filtros del historial
+  const [hFechaDesde, setHFechaDesde] = useState('');
+  const [hFechaHasta, setHFechaHasta] = useState('');
+  const [hTotalMin, setHTotalMin]     = useState('');
+  const [hCantMin, setHCantMin]       = useState('');
 
-  const loadData = useCallback(() => { setLoading(true); api.getProveedores({}).then(r => setProveedores(r.data.proveedores || [])).finally(() => setLoading(false)); }, []);
+  const [form, setForm] = useState({ nombre: '', ruc: '', direccion: '', contacto: '', telefono: '' });
+  const canCreate = hasPermission(user, 'proveedores', 'crear') || user?.role === 'admin';
+  const canEdit   = hasPermission(user, 'proveedores', 'editar')   || user?.role === 'admin';
+  const canDelete = hasPermission(user, 'proveedores', 'eliminar') || user?.role === 'admin';
+
+  const loadData = useCallback(() => {
+    setLoading(true);
+    api.getProveedores({ search }).then(r => setProveedores(r.data.proveedores || [])).finally(() => setLoading(false));
+  }, [search]);
+
   useEffect(() => { loadData(); }, [loadData]);
 
-  const openNew = () => { setEditItem(null); setForm({ nombre: '', ruc: '', direccion: '', contacto: '', telefono: '' }); setShowModal(true); };
+  const openNew  = () => { setEditItem(null); setForm({ nombre: '', ruc: '', direccion: '', contacto: '', telefono: '' }); setShowModal(true); };
   const openEdit = (p) => { setEditItem(p); setForm({ nombre: p.nombre, ruc: p.ruc || '', direccion: p.direccion || '', contacto: p.contacto || '', telefono: p.telefono || '' }); setShowModal(true); };
 
   const handleSave = async () => {
+    if (!form.nombre) return alert('El nombre es obligatorio');
     try {
       if (editItem) { await api.updateProveedor(editItem.id, form); }
       else { await api.createProveedor(form); }
@@ -2147,35 +2499,250 @@ function ProveedoresView({ user }) {
 
   const handleDelete = async (id) => {
     if (!window.confirm('¿Eliminar este proveedor?')) return;
-    try { await api.deleteProveedor(id); loadData(); } catch (e) { alert(formatApiError(e.response?.data?.detail)); }
+    try { await api.deleteProveedor(id); loadData(); }
+    catch (e) { alert(formatApiError(e.response?.data?.detail)); }
   };
+
+  const openHistorial = async (prov, params = {}) => {
+    setSelectedProv(prov);
+    setShowHistorial(true);
+    setLoadingHistorial(true);
+    setHistorialCompras([]);
+    try {
+      const r = await api.getProveedorCompras(prov.id, params);
+      setHistorialCompras(r.data.compras || []);
+      setHistorialStats({ cantidad: r.data.cantidad_compras, total: r.data.total_comprado });
+    } catch (e) { alert(formatApiError(e.response?.data?.detail || e.message)); }
+    finally { setLoadingHistorial(false); }
+  };
+
+  const aplicarFiltrosHistorial = () => {
+    if (!selectedProv) return;
+    openHistorial(selectedProv, {
+      fecha_desde: hFechaDesde || undefined,
+      fecha_hasta: hFechaHasta || undefined,
+      total_min:   hTotalMin   || undefined,
+      cantidad_min: hCantMin   || undefined,
+    });
+  };
+
+  // Filtros locales sobre la lista principal
+  const filtrados = proveedores.filter(p => {
+    if (filterFechaDesde && p.ultima_compra && p.ultima_compra < filterFechaDesde) return false;
+    if (filterFechaHasta && p.ultima_compra && p.ultima_compra > filterFechaHasta + 'T23:59:59') return false;
+    if (filterTotalMin && (p.total_comprado || 0) < parseFloat(filterTotalMin)) return false;
+    if (filterCantMin  && (p.cantidad_compras || 0) < parseInt(filterCantMin))  return false;
+    return true;
+  });
+
+  const hasActiveFilters = filterFechaDesde || filterFechaHasta || filterTotalMin || filterCantMin;
 
   return (
     <div className="space-y-6" data-testid="proveedores-view">
+
+      {/* Header */}
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-heading font-semibold">Proveedores</h2>
-        {canCreate && <button onClick={openNew} className="flex items-center gap-2 px-4 py-2 bg-[#E63946] text-white rounded-lg hover:bg-[#D90429]" data-testid="add-proveedor-btn"><Plus size={18} /> Nuevo Proveedor</button>}
+        {canCreate && (
+          <button onClick={openNew} className="flex items-center gap-2 px-4 py-2 bg-[#E63946] text-white rounded-lg hover:bg-[#D90429]" data-testid="add-proveedor-btn">
+            <Plus size={18} /> Nuevo Proveedor
+          </button>
+        )}
       </div>
-      <div className="relative max-w-md">
-        <MagnifyingGlass size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-        <input type="text" placeholder="Buscar por nombre, contacto..." value={search} onChange={(e) => setSearch(e.target.value)} className="form-input pl-10" data-testid="proveedores-search" />
+
+      {/* Búsqueda + botón filtros */}
+      <div className="flex gap-3 items-center">
+        <div className="relative flex-1 max-w-md">
+          <MagnifyingGlass size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+          <input type="text" placeholder="Buscar por nombre, RUC, contacto..." value={search}
+            onChange={(e) => setSearch(e.target.value)} className="form-input pl-10" data-testid="proveedores-search" />
+        </div>
+        <button onClick={() => setShowFilters(v => !v)}
+          className={`flex items-center gap-2 px-3 py-2 border rounded-lg text-sm transition-colors ${showFilters || hasActiveFilters ? 'bg-[#E63946] text-white border-[#E63946]' : 'border-border hover:bg-muted'}`}>
+          <Funnel size={16} /> Filtros {hasActiveFilters ? '●' : ''}
+        </button>
       </div>
+
+      {/* Panel de filtros */}
+      {showFilters && (
+        <div className="bg-white border border-border rounded-lg p-4 grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="form-group">
+            <label className="form-label">Última compra desde</label>
+            <input type="date" value={filterFechaDesde} onChange={e => setFilterFechaDesde(e.target.value)} className="form-input" />
+          </div>
+          <div className="form-group">
+            <label className="form-label">Última compra hasta</label>
+            <input type="date" value={filterFechaHasta} onChange={e => setFilterFechaHasta(e.target.value)} className="form-input" />
+          </div>
+          <div className="form-group">
+            <label className="form-label">Total comprado mín. (Gs.)</label>
+            <input type="number" value={filterTotalMin} onChange={e => setFilterTotalMin(e.target.value)} className="form-input" placeholder="0" min="0" />
+          </div>
+          <div className="form-group">
+            <label className="form-label">Cantidad compras mín.</label>
+            <input type="number" value={filterCantMin} onChange={e => setFilterCantMin(e.target.value)} className="form-input" placeholder="0" min="0" />
+          </div>
+          {hasActiveFilters && (
+            <div className="col-span-full flex justify-end">
+              <button onClick={() => { setFilterFechaDesde(''); setFilterFechaHasta(''); setFilterTotalMin(''); setFilterCantMin(''); }}
+                className="text-sm text-[#E63946] hover:underline">Limpiar filtros</button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Tabla principal */}
       <div className="bg-white border border-border rounded-md">
-        <table className="data-table">
-          <thead><tr><th>Nombre</th><th>RUC</th><th>Contacto</th><th>Teléfono</th><th>Dirección</th>{(canEdit || canDelete) && <th className="text-center">Acciones</th>}</tr></thead>
-          <tbody>
-            {loading ? <tr><td colSpan={6} className="text-center py-8">Cargando...</td></tr>
-            : proveedores.length === 0 ? <tr><td colSpan={6} className="text-center py-8">Sin proveedores</td></tr>
-            : proveedores.filter(p => !search || p.nombre?.toLowerCase().includes(search.toLowerCase()) || p.contacto?.toLowerCase().includes(search.toLowerCase())).map(p => (
-              <tr key={p.id}><td className="font-medium">{p.nombre}</td><td>{p.ruc || '-'}</td><td>{p.contacto || '-'}</td><td>{p.telefono || '-'}</td><td className="text-sm">{p.direccion || '-'}</td>
-              {(canEdit || canDelete) && <td className="text-center"><div className="flex items-center justify-center gap-1">{canEdit && <button onClick={() => openEdit(p)} className="p-1 hover:bg-yellow-50 rounded text-yellow-600"><Pencil size={16} /></button>}{canDelete && <button onClick={() => handleDelete(p.id)} className="p-1 hover:bg-red-50 rounded text-red-600"><Trash size={16} /></button>}</div></td>}</tr>
-            ))}
-          </tbody>
-        </table>
+        <div className="overflow-x-auto max-h-[600px]">
+          <table className="data-table">
+            <thead className="sticky top-0 bg-white">
+              <tr>
+                <th>Nombre</th>
+                <th>RUC</th>
+                <th>Contacto</th>
+                <th>Teléfono</th>
+                <th className="text-center">Cant. Compras</th>
+                <th className="text-right">Total Comprado</th>
+                <th className="text-right">Última Compra</th>
+                <th className="text-right">Monto Últ. Compra</th>
+                <th className="text-center">Acciones</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading
+                ? <tr><td colSpan={9} className="text-center py-8 text-muted-foreground">Cargando...</td></tr>
+                : filtrados.length === 0
+                ? <tr><td colSpan={9} className="text-center py-8 text-muted-foreground">Sin proveedores</td></tr>
+                : filtrados.map(p => (
+                  <tr key={p.id}>
+                    <td className="font-medium">{p.nombre}</td>
+                    <td className="text-sm text-muted-foreground">{p.ruc || '-'}</td>
+                    <td className="text-sm">{p.contacto || '-'}</td>
+                    <td className="text-sm">{p.telefono || '-'}</td>
+                    <td className="text-center">
+                      {p.cantidad_compras > 0
+                        ? <span className="badge badge-success">{p.cantidad_compras}</span>
+                        : <span className="text-muted-foreground text-sm">0</span>}
+                    </td>
+                    <td className="text-right font-mono font-semibold">{formatGs(p.total_comprado || 0)}</td>
+                    <td className="text-right text-sm">
+                      {p.ultima_compra
+                        ? new Date(p.ultima_compra).toLocaleDateString('es-PY')
+                        : <span className="text-muted-foreground">-</span>}
+                    </td>
+                    <td className="text-right font-mono text-sm">{p.monto_ultima_compra ? formatGs(p.monto_ultima_compra) : <span className="text-muted-foreground">-</span>}</td>
+                    <td className="text-center">
+                      <div className="flex items-center justify-center gap-1">
+                        <button onClick={() => openHistorial(p)} className="p-1 hover:bg-blue-50 rounded text-blue-600" title="Ver historial de compras"><Eye size={16} /></button>
+                        {canEdit   && <button onClick={() => openEdit(p)}      className="p-1 hover:bg-yellow-50 rounded text-yellow-600" title="Editar"><Pencil size={16} /></button>}
+                        {canDelete && <button onClick={() => handleDelete(p.id)} className="p-1 hover:bg-red-50 rounded text-red-600"    title="Eliminar"><Trash size={16} /></button>}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+            </tbody>
+          </table>
+        </div>
       </div>
+
+      {/* Modal Historial de Compras */}
+      <Modal isOpen={showHistorial} onClose={() => setShowHistorial(false)} title="Historial de Compras" size="xl">
+        {selectedProv && (
+          <div className="space-y-4">
+            {/* Info proveedor */}
+            <div className="grid grid-cols-3 gap-4 text-sm bg-muted/30 rounded-lg p-3">
+              <div>
+                <span className="text-muted-foreground">Proveedor</span>
+                <div className="font-semibold">{selectedProv.nombre}</div>
+                {selectedProv.ruc && <div className="text-xs text-muted-foreground">RUC: {selectedProv.ruc}</div>}
+              </div>
+              <div>
+                <span className="text-muted-foreground">Compras totales</span>
+                <div className="font-semibold text-lg text-blue-600">{historialStats.cantidad ?? selectedProv.cantidad_compras ?? 0}</div>
+              </div>
+              <div>
+                <span className="text-muted-foreground">Total comprado</span>
+                <div className="font-semibold font-mono text-[#E63946]">{formatGs(historialStats.total ?? selectedProv.total_comprado ?? 0)}</div>
+              </div>
+            </div>
+
+            {/* Filtros del historial */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 p-3 bg-muted/20 rounded-lg">
+              <div className="form-group">
+                <label className="form-label text-xs">Desde</label>
+                <input type="date" value={hFechaDesde} onChange={e => setHFechaDesde(e.target.value)} className="form-input" />
+              </div>
+              <div className="form-group">
+                <label className="form-label text-xs">Hasta</label>
+                <input type="date" value={hFechaHasta} onChange={e => setHFechaHasta(e.target.value)} className="form-input" />
+              </div>
+              <div className="form-group">
+                <label className="form-label text-xs">Total mín. (Gs.)</label>
+                <input type="number" value={hTotalMin} onChange={e => setHTotalMin(e.target.value)} className="form-input" placeholder="0" min="0" />
+              </div>
+              <div className="form-group">
+                <label className="form-label text-xs">Cant. ítems mín.</label>
+                <input type="number" value={hCantMin} onChange={e => setHCantMin(e.target.value)} className="form-input" placeholder="0" min="0" />
+              </div>
+              <div className="col-span-full flex gap-2 justify-end">
+                <button onClick={() => { setHFechaDesde(''); setHFechaHasta(''); setHTotalMin(''); setHCantMin(''); openHistorial(selectedProv); }}
+                  className="text-sm px-3 py-1.5 border border-border rounded hover:bg-muted">Limpiar</button>
+                <button onClick={aplicarFiltrosHistorial}
+                  className="text-sm px-3 py-1.5 bg-[#E63946] text-white rounded hover:bg-[#D90429]">Aplicar filtros</button>
+              </div>
+            </div>
+
+            {/* Tabla historial */}
+            {loadingHistorial ? (
+              <div className="text-center py-8 text-muted-foreground">Cargando historial...</div>
+            ) : historialCompras.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">Sin compras registradas para este proveedor</div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>Fecha</th>
+                      <th>Factura</th>
+                      <th className="text-center">Ítems</th>
+                      <th className="text-right">Total</th>
+                      <th>Observaciones</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {historialCompras.map((c, i) => (
+                      <tr key={i}>
+                        <td className="whitespace-nowrap">{c.fecha ? new Date(c.fecha).toLocaleDateString('es-PY') : '-'}</td>
+                        <td className="text-sm font-mono">{c.numero_factura || '-'}</td>
+                        <td className="text-center">
+                          <span className="badge badge-success">{(c.items || []).length}</span>
+                        </td>
+                        <td className="text-right font-mono font-semibold">{formatGs(c.total || 0)}</td>
+                        <td className="text-sm text-muted-foreground">{c.observaciones || '-'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot className="bg-muted font-semibold">
+                    <tr>
+                      <td colSpan={3} className="text-right px-4 py-2">TOTAL:</td>
+                      <td className="text-right font-mono px-4 py-2 text-[#E63946]">{formatGs(historialStats.total || 0)}</td>
+                      <td></td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+      </Modal>
+
+      {/* Modal Crear / Editar Proveedor */}
       <Modal isOpen={showModal} onClose={() => setShowModal(false)} title={editItem ? 'Editar Proveedor' : 'Nuevo Proveedor'} size="md">
         <div className="space-y-4">
-          <div className="form-group"><label className="form-label">Nombre *</label><input type="text" value={form.nombre} onChange={(e) => setForm({...form, nombre: e.target.value})} className="form-input" data-testid="proveedor-nombre" /></div>
+          <div className="form-group">
+            <label className="form-label">Nombre *</label>
+            <input type="text" value={form.nombre} onChange={(e) => setForm({...form, nombre: e.target.value})} className="form-input" data-testid="proveedor-nombre" />
+          </div>
           <div className="grid grid-cols-2 gap-4">
             <div className="form-group"><label className="form-label">RUC</label><input type="text" value={form.ruc} onChange={(e) => setForm({...form, ruc: e.target.value})} className="form-input" /></div>
             <div className="form-group"><label className="form-label">Teléfono</label><input type="text" value={form.telefono} onChange={(e) => setForm({...form, telefono: e.target.value})} className="form-input" /></div>
@@ -2197,57 +2764,195 @@ function GastosView({ user }) {
   const [gastos, setGastos] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [filterCategoria, setFilterCategoria] = useState('');
+  const [filterFechaDesde, setFilterFechaDesde] = useState('');
+  const [filterFechaHasta, setFilterFechaHasta] = useState('');
   const [showModal, setShowModal] = useState(false);
-  const [form, setForm] = useState({ fecha: new Date().toISOString().split('T')[0], categoria: '', descripcion: '', monto: 0, iva_pct: 10, proveedor: '' });
+  const [showDetailModal, setShowDetailModal] = useState(false);
+  const [editItem, setEditItem] = useState(null);
+  const [selectedGasto, setSelectedGasto] = useState(null);
+  const [proveedores, setProveedores] = useState([]);
+  const [categorias] = useState(['Transporte', 'Marketing', 'Servicios', 'Operativos', 'Alquiler', 'Sueldos', 'Impuestos', 'Varios']);
+  const [form, setForm] = useState({
+    fecha: new Date().toISOString().split('T')[0], categoria: '', descripcion: '',
+    proveedor_id: '', proveedor_nombre: '', monto: 0, observaciones: ''
+  });
+  const isAdmin = user?.role === 'admin';
+  const canEdit = hasPermission(user, 'gastos', 'editar') || isAdmin;
+  const canDelete = hasPermission(user, 'gastos', 'eliminar') || isAdmin;
 
-  const loadData = useCallback(() => { setLoading(true); api.getGastos({}).then(r => setGastos(r.data.gastos || [])).finally(() => setLoading(false)); }, []);
-  useEffect(() => { loadData(); }, [loadData]);
+  const loadData = useCallback(() => {
+    setLoading(true);
+    api.getGastos({}).then(r => setGastos(r.data.gastos || [])).finally(() => setLoading(false));
+  }, []);
 
-  const total = gastos.reduce((s, g) => s + (g.monto || 0), 0);
+  useEffect(() => {
+    loadData();
+    api.getProveedores({}).then(r => setProveedores(r.data.proveedores || []));
+  }, [loadData]);
+
+  const openNew = () => {
+    setEditItem(null);
+    setForm({ fecha: new Date().toISOString().split('T')[0], categoria: '', descripcion: '', proveedor_id: '', proveedor_nombre: '', monto: 0, observaciones: '' });
+    setShowModal(true);
+  };
+
+  const openEdit = (g) => {
+    setEditItem(g);
+    setForm({
+      fecha: g.fecha ? g.fecha.split('T')[0] : new Date().toISOString().split('T')[0],
+      categoria: g.categoria || '', descripcion: g.descripcion || '',
+      proveedor_id: g.proveedor_id || '', proveedor_nombre: g.proveedor_nombre || g.proveedor || '',
+      monto: g.monto || 0, observaciones: g.observaciones || ''
+    });
+    setShowModal(true);
+  };
 
   const handleSave = async () => {
     if (!form.categoria || !form.descripcion || !form.monto) return alert('Complete los campos obligatorios');
-    try { await api.createGasto(form); setShowModal(false); loadData(); }
+    try {
+      if (editItem) { await api.updateGasto(editItem.id, form); }
+      else { await api.createGasto(form); }
+      setShowModal(false); loadData();
+    } catch (e) { alert(formatApiError(e.response?.data?.detail)); }
+  };
+
+  const handleDelete = async (id) => {
+    if (!window.confirm('¿Eliminar este gasto?')) return;
+    try { await api.deleteGasto(id); loadData(); }
     catch (e) { alert(formatApiError(e.response?.data?.detail)); }
   };
+
+  const filteredGastos = gastos.filter(g => {
+    const matchSearch = !search || g.descripcion?.toLowerCase().includes(search.toLowerCase()) || g.categoria?.toLowerCase().includes(search.toLowerCase());
+    const matchCat = !filterCategoria || g.categoria === filterCategoria;
+    const gFecha = g.fecha ? g.fecha.split('T')[0] : '';
+    const matchDesde = !filterFechaDesde || gFecha >= filterFechaDesde;
+    const matchHasta = !filterFechaHasta || gFecha <= filterFechaHasta;
+    return matchSearch && matchCat && matchDesde && matchHasta;
+  });
+
+  const totalFiltrado = filteredGastos.reduce((s, g) => s + (g.monto || 0), 0);
 
   return (
     <div className="space-y-6" data-testid="gastos-view">
       <div className="flex items-center justify-between">
-        <div><h2 className="text-2xl font-heading font-semibold">Gastos</h2><p className="text-muted-foreground">Total: {formatGs(total)}</p></div>
-        <button onClick={() => { setForm({ fecha: new Date().toISOString().split('T')[0], categoria: '', descripcion: '', monto: 0, iva_pct: 10, proveedor: '' }); setShowModal(true); }} className="flex items-center gap-2 px-4 py-2 bg-[#E63946] text-white rounded-lg hover:bg-[#D90429]" data-testid="add-gasto-btn"><Plus size={18} /> Nuevo Gasto</button>
+        <div>
+          <h2 className="text-2xl font-heading font-semibold">Gastos</h2>
+          <p className="text-muted-foreground text-sm">Total filtrado: <span className="font-semibold text-foreground">{formatGs(totalFiltrado)}</span></p>
+        </div>
+        <button onClick={openNew} className="flex items-center gap-2 px-4 py-2 bg-[#E63946] text-white rounded-lg hover:bg-[#D90429]" data-testid="add-gasto-btn">
+          <Plus size={18} /> Nuevo Gasto
+        </button>
       </div>
-      <div className="relative max-w-md">
-        <MagnifyingGlass size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-        <input type="text" placeholder="Buscar por categoría, descripción..." value={search} onChange={(e) => setSearch(e.target.value)} className="form-input pl-10" data-testid="gastos-search" />
+
+      {/* Filters */}
+      <div className="bg-white border border-border rounded-lg p-4">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div className="relative">
+            <MagnifyingGlass size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+            <input type="text" placeholder="Buscar..." value={search} onChange={(e) => setSearch(e.target.value)} className="form-input pl-9" data-testid="gastos-search" />
+          </div>
+          <select value={filterCategoria} onChange={(e) => setFilterCategoria(e.target.value)} className="form-input">
+            <option value="">Todas las categorías</option>
+            {categorias.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+          <input type="date" value={filterFechaDesde} onChange={(e) => setFilterFechaDesde(e.target.value)} className="form-input" placeholder="Desde" />
+          <input type="date" value={filterFechaHasta} onChange={(e) => setFilterFechaHasta(e.target.value)} className="form-input" placeholder="Hasta" />
+        </div>
       </div>
+
       <div className="bg-white border border-border rounded-md">
-        <table className="data-table">
-          <thead><tr><th>Fecha</th><th>Categoría</th><th>Descripción</th><th>Proveedor</th><th className="text-right">Monto</th></tr></thead>
-          <tbody>
-            {loading ? <tr><td colSpan={5} className="text-center py-8">Cargando...</td></tr>
-            : gastos.length === 0 ? <tr><td colSpan={5} className="text-center py-8">Sin gastos registrados</td></tr>
-            : gastos.filter(g => !search || g.categoria?.toLowerCase().includes(search.toLowerCase()) || g.descripcion?.toLowerCase().includes(search.toLowerCase()) || g.proveedor?.toLowerCase().includes(search.toLowerCase())).map(g => (
-              <tr key={g.id}><td>{new Date(g.fecha).toLocaleDateString('es-PY')}</td><td><span className="badge bg-orange-100 text-orange-800">{g.categoria}</span></td><td>{g.descripcion}</td><td>{g.proveedor || '-'}</td><td className="text-right price-gs">{formatGs(g.monto)}</td></tr>
-            ))}
-          </tbody>
-        </table>
+        <div className="overflow-x-auto max-h-[600px]">
+          <table className="data-table">
+            <thead className="sticky top-0 bg-white">
+              <tr><th>Fecha</th><th>Categoría</th><th>Descripción</th><th>Proveedor</th><th className="text-right">Monto</th><th className="text-center">Acciones</th></tr>
+            </thead>
+            <tbody>
+              {loading ? <tr><td colSpan={6} className="text-center py-8">Cargando...</td></tr>
+              : filteredGastos.length === 0 ? <tr><td colSpan={6} className="text-center py-8">Sin gastos registrados</td></tr>
+              : filteredGastos.map(g => (
+                <tr key={g.id}>
+                  <td className="whitespace-nowrap">{new Date(g.fecha).toLocaleDateString('es-PY')}</td>
+                  <td><span className="badge bg-orange-100 text-orange-800">{g.categoria}</span></td>
+                  <td>{g.descripcion}</td>
+                  <td className="text-sm">{g.proveedor_nombre || g.proveedor || '-'}</td>
+                  <td className="text-right font-mono">{formatGs(g.monto)}</td>
+                  <td className="text-center">
+                    <div className="flex items-center justify-center gap-1">
+                      <button onClick={() => { setSelectedGasto(g); setShowDetailModal(true); }} className="p-1 hover:bg-blue-50 rounded text-blue-600" title="Ver"><Eye size={16} /></button>
+                      {canEdit && <button onClick={() => openEdit(g)} className="p-1 hover:bg-yellow-50 rounded text-yellow-600" title="Editar"><Pencil size={16} /></button>}
+                      {canDelete && <button onClick={() => handleDelete(g.id)} className="p-1 hover:bg-red-50 rounded text-red-600" title="Eliminar"><Trash size={16} /></button>}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
-      <Modal isOpen={showModal} onClose={() => setShowModal(false)} title="Nuevo Gasto" size="md">
+
+      {/* Detail Modal */}
+      <Modal isOpen={showDetailModal} onClose={() => setShowDetailModal(false)} title="Detalle de Gasto" size="md">
+        {selectedGasto && (
+          <div className="space-y-3 text-sm">
+            <div className="grid grid-cols-2 gap-3">
+              <div><span className="text-muted-foreground">Fecha:</span> <span className="font-medium">{new Date(selectedGasto.fecha).toLocaleDateString('es-PY')}</span></div>
+              <div><span className="text-muted-foreground">Categoría:</span> <span className="badge bg-orange-100 text-orange-800">{selectedGasto.categoria}</span></div>
+              <div className="col-span-2"><span className="text-muted-foreground">Descripción:</span> <span className="font-medium">{selectedGasto.descripcion}</span></div>
+              {(selectedGasto.proveedor_nombre || selectedGasto.proveedor) && <div><span className="text-muted-foreground">Proveedor:</span> <span className="font-medium">{selectedGasto.proveedor_nombre || selectedGasto.proveedor}</span></div>}
+              <div><span className="text-muted-foreground">Monto:</span> <span className="font-semibold text-lg">{formatGs(selectedGasto.monto)}</span></div>
+              {selectedGasto.observaciones && <div className="col-span-2"><span className="text-muted-foreground">Obs:</span> {selectedGasto.observaciones}</div>}
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* Create/Edit Modal */}
+      <Modal isOpen={showModal} onClose={() => setShowModal(false)} title={editItem ? 'Editar Gasto' : 'Nuevo Gasto'} size="md">
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
-            <div className="form-group"><label className="form-label">Fecha *</label><input type="date" value={form.fecha} onChange={(e) => setForm({...form, fecha: e.target.value})} className="form-input" /></div>
-            <div className="form-group"><label className="form-label">Categoría *</label><input type="text" value={form.categoria} onChange={(e) => setForm({...form, categoria: e.target.value})} className="form-input" list="gastos-cat" /><datalist id="gastos-cat"><option value="Alquiler" /><option value="Servicios" /><option value="Transporte" /><option value="Sueldos" /><option value="Impuestos" /><option value="Varios" /></datalist></div>
+            <div className="form-group">
+              <label className="form-label">Fecha *</label>
+              <input type="date" value={form.fecha} onChange={(e) => setForm({ ...form, fecha: e.target.value })} className="form-input" />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Categoría *</label>
+              <select value={form.categoria} onChange={(e) => setForm({ ...form, categoria: e.target.value })} className="form-input">
+                <option value="">Seleccionar...</option>
+                {categorias.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
           </div>
-          <div className="form-group"><label className="form-label">Descripción *</label><input type="text" value={form.descripcion} onChange={(e) => setForm({...form, descripcion: e.target.value})} className="form-input" data-testid="gasto-descripcion" /></div>
-          <div className="grid grid-cols-3 gap-4">
-            <div className="form-group"><label className="form-label">Monto *</label><input type="number" value={form.monto} onChange={(e) => setForm({...form, monto: parseFloat(e.target.value) || 0})} className="form-input" /></div>
-            <div className="form-group"><label className="form-label">IVA %</label><input type="number" value={form.iva_pct} onChange={(e) => setForm({...form, iva_pct: parseInt(e.target.value) || 0})} className="form-input" /></div>
-            <div className="form-group"><label className="form-label">Proveedor</label><input type="text" value={form.proveedor} onChange={(e) => setForm({...form, proveedor: e.target.value})} className="form-input" /></div>
+          <div className="form-group">
+            <label className="form-label">Descripción *</label>
+            <input type="text" value={form.descripcion} onChange={(e) => setForm({ ...form, descripcion: e.target.value })} className="form-input" data-testid="gasto-descripcion" />
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="form-group">
+              <label className="form-label">Monto *</label>
+              <input type="number" value={form.monto} onChange={(e) => setForm({ ...form, monto: parseFloat(e.target.value) || 0 })} className="form-input" min="0" />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Proveedor (opcional)</label>
+              <select value={form.proveedor_id} onChange={(e) => {
+                const p = proveedores.find(pr => pr.id === e.target.value);
+                setForm({ ...form, proveedor_id: e.target.value, proveedor_nombre: p?.nombre || '' });
+              }} className="form-input">
+                <option value="">Sin proveedor</option>
+                {proveedores.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
+              </select>
+            </div>
+          </div>
+          <div className="form-group">
+            <label className="form-label">Observaciones</label>
+            <textarea value={form.observaciones} onChange={(e) => setForm({ ...form, observaciones: e.target.value })} className="form-input h-20 resize-none" />
           </div>
           <div className="flex justify-end gap-3">
             <button onClick={() => setShowModal(false)} className="px-4 py-2 border border-border rounded-md hover:bg-muted">Cancelar</button>
-            <button onClick={handleSave} className="bg-[#E63946] text-white px-4 py-2 rounded-md hover:bg-[#D90429]" data-testid="save-gasto-btn">Registrar Gasto</button>
+            <button onClick={handleSave} className="bg-[#E63946] text-white px-4 py-2 rounded-md hover:bg-[#D90429]" data-testid="save-gasto-btn">
+              {editItem ? 'Actualizar' : 'Registrar'}
+            </button>
           </div>
         </div>
       </Modal>
@@ -2496,10 +3201,348 @@ function UsuariosView() {
 }
 
 function ReportesView() { const exportCSV = (t) => window.open(`${API_URL}/api/reportes/${t}?formato=csv`, '_blank'); return (<div className="space-y-6" data-testid="reportes-view"><h2 className="text-2xl font-heading font-semibold">Reportes</h2><div className="bg-white border border-border rounded-md p-6"><h3 className="font-semibold mb-4">Exportar Reportes</h3><div className="grid grid-cols-1 md:grid-cols-3 gap-4"><button onClick={() => exportCSV('ventas')} className="flex items-center gap-3 p-4 border rounded-lg hover:bg-muted"><FileText size={24} className="text-green-600" /><div className="text-left"><p className="font-medium">Ventas CSV</p></div></button><button onClick={() => exportCSV('productos')} className="flex items-center gap-3 p-4 border rounded-lg hover:bg-muted"><Package size={24} className="text-blue-600" /><div className="text-left"><p className="font-medium">Inventario CSV</p></div></button><button onClick={() => exportCSV('stock-movimientos')} className="flex items-center gap-3 p-4 border rounded-lg hover:bg-muted"><ClockCounterClockwise size={24} className="text-orange-600" /><div className="text-left"><p className="font-medium">Mov. Stock CSV</p></div></button></div></div></div>); }
-function StockHistorialView() { const [movimientos, setMovimientos] = useState([]); const [loading, setLoading] = useState(true); useEffect(() => { api.getStockMovimientos({}).then(r => setMovimientos(r.data.movimientos || [])).finally(() => setLoading(false)); }, []); return (<div className="space-y-6" data-testid="stock-historial-view"><h2 className="text-2xl font-heading font-semibold">Historial Stock</h2><div className="bg-white border border-border rounded-md"><div className="overflow-x-auto max-h-[600px]"><table className="data-table"><thead className="sticky top-0 bg-white"><tr><th>Fecha</th><th>Producto</th><th>Tipo</th><th className="text-right">Cant.</th><th className="text-right">Anterior</th><th className="text-right">Nuevo</th><th>Usuario</th></tr></thead><tbody>{loading ? <tr><td colSpan={7} className="text-center py-8">Cargando...</td></tr> : movimientos.map(m => (<tr key={m.id}><td className="text-sm">{new Date(m.fecha).toLocaleString('es-PY')}</td><td className="font-medium">{m.producto_nombre}</td><td><span className={`badge ${m.tipo === 'entrada' ? 'badge-success' : 'badge-warning'}`}>{m.tipo}</span></td><td className="text-right font-mono">{m.cantidad}</td><td className="text-right text-muted-foreground">{m.stock_anterior}</td><td className="text-right font-medium">{m.stock_nuevo}</td><td className="text-sm">{m.usuario_email || '-'}</td></tr>))}</tbody></table></div></div></div>); }
+function StockHistorialView() {
+  const [movimientos, setMovimientos] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [filterTipo, setFilterTipo] = useState('');
+  const [filterFechaDesde, setFilterFechaDesde] = useState('');
+  const [filterFechaHasta, setFilterFechaHasta] = useState('');
+  const [search, setSearch] = useState('');
+
+  const loadData = useCallback(() => {
+    setLoading(true);
+    const params = {};
+    if (filterTipo) params.tipo = filterTipo;
+    if (filterFechaDesde) params.fecha_desde = filterFechaDesde;
+    if (filterFechaHasta) params.fecha_hasta = filterFechaHasta;
+    api.getStockMovimientos(params).then(r => setMovimientos(r.data.movimientos || [])).finally(() => setLoading(false));
+  }, [filterTipo, filterFechaDesde, filterFechaHasta]);
+
+  useEffect(() => { loadData(); }, [loadData]);
+
+  const ORIGEN_MAP = { 'compra': 'Compra', 'venta': 'Venta', 'ajuste': 'Ajuste manual', 'devolucion': 'Devolución' };
+  const TIPO_BADGE = { 'entrada': 'badge-success', 'salida': 'badge-warning', 'ajuste': 'bg-blue-100 text-blue-800' };
+
+  const filtered = movimientos.filter(m =>
+    !search || m.producto_nombre?.toLowerCase().includes(search.toLowerCase()) || m.variante?.toLowerCase().includes(search.toLowerCase())
+  );
+
+  return (
+    <div className="space-y-6" data-testid="stock-historial-view">
+      <h2 className="text-2xl font-heading font-semibold">Historial de Stock</h2>
+
+      {/* Filters */}
+      <div className="bg-white border border-border rounded-lg p-4">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div className="relative">
+            <MagnifyingGlass size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+            <input type="text" placeholder="Buscar producto..." value={search} onChange={(e) => setSearch(e.target.value)} className="form-input pl-9" />
+          </div>
+          <select value={filterTipo} onChange={(e) => setFilterTipo(e.target.value)} className="form-input">
+            <option value="">Todos los tipos</option>
+            <option value="entrada">Entradas</option>
+            <option value="salida">Salidas</option>
+            <option value="ajuste">Ajustes</option>
+          </select>
+          <input type="date" value={filterFechaDesde} onChange={(e) => setFilterFechaDesde(e.target.value)} className="form-input" />
+          <input type="date" value={filterFechaHasta} onChange={(e) => setFilterFechaHasta(e.target.value)} className="form-input" />
+        </div>
+      </div>
+
+      <div className="bg-white border border-border rounded-md">
+        <div className="overflow-x-auto max-h-[600px]">
+          <table className="data-table">
+            <thead className="sticky top-0 bg-white">
+              <tr>
+                <th>Fecha</th>
+                <th>Producto</th>
+                <th>Tipo</th>
+                <th>Origen</th>
+                <th className="text-right">Cant.</th>
+                <th className="text-right">Anterior</th>
+                <th className="text-right">Nuevo</th>
+                <th className="text-right">Costo Unit.</th>
+                <th>Usuario</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? <tr><td colSpan={9} className="text-center py-8">Cargando...</td></tr>
+              : filtered.length === 0 ? <tr><td colSpan={9} className="text-center py-8">Sin movimientos</td></tr>
+              : filtered.map(m => (
+                <tr key={m.id}>
+                  <td className="whitespace-nowrap text-sm">{new Date(m.fecha).toLocaleString('es-PY', { dateStyle: 'short', timeStyle: 'short' })}</td>
+                  <td>
+                    <div className="font-medium text-sm">{m.producto_nombre}</div>
+                    {m.variante && <div className="text-xs text-muted-foreground">Variante: {m.variante}</div>}
+                  </td>
+                  <td><span className={`badge ${TIPO_BADGE[m.tipo] || 'badge-warning'}`}>{m.tipo}</span></td>
+                  <td className="text-sm">{ORIGEN_MAP[m.referencia_tipo] || m.referencia_tipo || '-'}</td>
+                  <td className={`text-right font-mono font-medium ${m.tipo === 'entrada' ? 'text-green-600' : 'text-red-600'}`}>
+                    {m.tipo === 'entrada' ? '+' : '-'}{m.cantidad}
+                  </td>
+                  <td className="text-right text-muted-foreground">{m.stock_anterior}</td>
+                  <td className="text-right font-medium">{m.stock_nuevo}</td>
+                  <td className="text-right text-sm">{m.costo_unitario ? formatGs(m.costo_unitario) : '-'}</td>
+                  <td className="text-sm">{m.usuario_email || '-'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
 function AuditoriaView() { const [registros, setRegistros] = useState([]); const [loading, setLoading] = useState(true); useEffect(() => { api.getAuditoria({}).then(r => setRegistros(r.data.registros || [])).finally(() => setLoading(false)); }, []); return (<div className="space-y-6" data-testid="auditoria-view"><h2 className="text-2xl font-heading font-semibold">Auditoría</h2><div className="bg-white border border-border rounded-md"><div className="overflow-x-auto max-h-[600px]"><table className="data-table"><thead className="sticky top-0 bg-white"><tr><th>Fecha</th><th>Usuario</th><th>Acción</th><th>Módulo</th><th>Detalle</th></tr></thead><tbody>{loading ? <tr><td colSpan={5} className="text-center py-8">Cargando...</td></tr> : registros.map(r => (<tr key={r.id}><td className="text-sm">{new Date(r.fecha).toLocaleString('es-PY')}</td><td className="font-medium">{r.usuario_email}</td><td><span className="badge bg-muted">{r.accion}</span></td><td className="capitalize">{r.modulo}</td><td className="text-sm text-muted-foreground max-w-xs truncate">{JSON.stringify(r.detalle)}</td></tr>))}</tbody></table></div></div></div>); }
 
 // Main App
+
+// ============ INVENTARIO VIEW ============
+const InventarioView = () => {
+  const { user } = useAuth();
+  const [inventario, setInventario] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [search, setSearch] = useState('');
+  const [showDetalle, setShowDetalle] = useState(false);
+  const [selectedProducto, setSelectedProducto] = useState(null);
+  const [movimientos, setMovimientos] = useState([]);
+  const [loadingDetalle, setLoadingDetalle] = useState(false);
+
+  useEffect(() => {
+    if (user) loadInventario();
+  }, [user]);
+
+  // Debounce search
+  useEffect(() => {
+    const t = setTimeout(() => { if (user) loadInventario(); }, 350);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  const loadInventario = async () => {
+    try {
+      setLoading(true);
+      const resp = await api.getInventario({ search });
+      setInventario(resp.data.inventario || []);
+    } catch (e) {
+      alert('Error al cargar inventario: ' + formatApiError(e.response?.data?.detail || e.message));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleVerDetalle = async (item) => {
+    try {
+      setLoadingDetalle(true);
+      setShowDetalle(true);
+      setSelectedProducto(item);
+      setMovimientos([]);
+      const resp = await api.getInventarioDetalle(item.id);
+      setMovimientos(resp.data.movimientos || []);
+    } catch (e) {
+      alert('Error al cargar detalle: ' + formatApiError(e.response?.data?.detail || e.message));
+    } finally {
+      setLoadingDetalle(false);
+    }
+  };
+
+  const totalValor = inventario.reduce((s, i) => s + (i.valor_stock || 0), 0);
+  const sinStock   = inventario.filter(i => i.stock_actual <= 0).length;
+  const totalCosto = inventario.reduce((s, i) => s + (i.costo_promedio || 0), 0);
+
+  const tipoLabel = (tipo) => {
+    if (tipo === 'entrada')  return <span className="badge badge-success">Entrada</span>;
+    if (tipo === 'salida')   return <span className="badge badge-danger">Salida</span>;
+    if (tipo === 'ajuste')   return <span className="badge badge-warning">Ajuste</span>;
+    return <span className="badge">{tipo}</span>;
+  };
+
+  const refLabel = (ref) => {
+    if (ref === 'compra')  return 'Compra';
+    if (ref === 'venta')   return 'Venta';
+    if (ref === 'ajuste')  return 'Ajuste manual';
+    if (ref === 'inicial') return 'Stock inicial';
+    return ref || '-';
+  };
+
+  return (
+    <div className="space-y-6" data-testid="inventario-view">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <h2 className="text-2xl font-heading font-semibold">Inventario</h2>
+      </div>
+
+      {/* Tarjetas de resumen */}
+      <div className="grid grid-cols-3 gap-4">
+        <div className="bg-white border border-border rounded-lg p-4">
+          <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Valor Total Stock</p>
+          <p className="text-xl font-semibold text-[#E63946] font-mono">{formatGs(totalValor)}</p>
+        </div>
+        <div className="bg-white border border-border rounded-lg p-4">
+          <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Productos Activos</p>
+          <p className="text-xl font-semibold text-blue-600">{inventario.length}</p>
+        </div>
+        <div className="bg-white border border-border rounded-lg p-4">
+          <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Sin Stock</p>
+          <p className={`text-xl font-semibold ${sinStock > 0 ? 'text-red-600' : 'text-green-600'}`}>{sinStock}</p>
+        </div>
+      </div>
+
+      {/* Buscador */}
+      <div className="relative max-w-md">
+        <MagnifyingGlass size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+        <input
+          type="text"
+          placeholder="Buscar por producto, código o variante..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="form-input pl-10"
+        />
+      </div>
+
+      {/* Tabla principal */}
+      <div className="bg-white border border-border rounded-md">
+        <div className="overflow-x-auto max-h-[600px]">
+          <table className="data-table">
+            <thead className="sticky top-0 bg-white">
+              <tr>
+                <th>Código</th>
+                <th>Producto</th>
+                <th>Variante</th>
+                <th className="text-right">Stock</th>
+                <th className="text-right">Costo Prom.</th>
+                <th className="text-right">Precio Venta</th>
+                <th className="text-right">Valor Stock</th>
+                <th className="text-center">Estado</th>
+                <th className="text-center">Detalle</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? (
+                <tr><td colSpan={9} className="text-center py-8 text-muted-foreground">Cargando inventario...</td></tr>
+              ) : inventario.length === 0 ? (
+                <tr><td colSpan={9} className="text-center py-8 text-muted-foreground">Sin productos en inventario</td></tr>
+              ) : inventario.map((item) => {
+                const sinStockItem = item.stock_actual <= 0;
+                return (
+                  <tr key={item.id}>
+                    <td className="text-sm text-muted-foreground font-mono">{item.codigo}</td>
+                    <td className="font-medium">{item.nombre}</td>
+                    <td className="text-sm text-muted-foreground">{item.variante || '-'}</td>
+                    <td className={`text-right font-semibold ${sinStockItem ? 'text-red-600' : item.stock_actual <= 3 ? 'text-yellow-600' : 'text-green-700'}`}>
+                      {item.stock_actual}
+                    </td>
+                    <td className="text-right font-mono text-sm">{formatGs(item.costo_promedio)}</td>
+                    <td className="text-right font-mono text-sm">{formatGs(item.precio_venta)}</td>
+                    <td className="text-right font-mono font-semibold">{formatGs(item.valor_stock)}</td>
+                    <td className="text-center">
+                      {sinStockItem
+                        ? <span className="badge badge-danger">Sin stock</span>
+                        : item.stock_actual <= 3
+                        ? <span className="badge badge-warning">Bajo</span>
+                        : <span className="badge badge-success">OK</span>}
+                    </td>
+                    <td className="text-center">
+                      <button
+                        onClick={() => handleVerDetalle(item)}
+                        className="p-1 hover:bg-blue-50 rounded text-blue-600"
+                        title="Ver historial de movimientos"
+                      >
+                        <Eye size={16} />
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+            {inventario.length > 0 && (
+              <tfoot className="bg-muted font-semibold sticky bottom-0">
+                <tr>
+                  <td colSpan={6} className="text-right px-4 py-3">TOTAL VALOR INVENTARIO:</td>
+                  <td className="text-right font-mono px-4 py-3 text-[#E63946]">{formatGs(totalValor)}</td>
+                  <td colSpan={2}></td>
+                </tr>
+              </tfoot>
+            )}
+          </table>
+        </div>
+      </div>
+
+      {/* Modal Historial de Movimientos */}
+      <Modal isOpen={showDetalle} onClose={() => setShowDetalle(false)} title="Historial de Movimientos" size="xl">
+        {selectedProducto && (
+          <div className="space-y-4">
+            {/* Info del producto */}
+            <div className="grid grid-cols-3 gap-4 text-sm bg-muted/30 rounded-lg p-3">
+              <div>
+                <span className="text-muted-foreground">Producto</span>
+                <div className="font-medium">{selectedProducto.nombre}</div>
+                {selectedProducto.variante && <div className="text-xs text-muted-foreground">Variante: {selectedProducto.variante}</div>}
+              </div>
+              <div>
+                <span className="text-muted-foreground">Stock Actual</span>
+                <div className={`font-semibold text-lg ${selectedProducto.stock_actual <= 0 ? 'text-red-600' : 'text-green-700'}`}>
+                  {selectedProducto.stock_actual}
+                </div>
+              </div>
+              <div>
+                <span className="text-muted-foreground">Costo Promedio</span>
+                <div className="font-semibold font-mono">{formatGs(selectedProducto.costo_promedio)}</div>
+                <div className="text-xs text-muted-foreground">Valor stock: {formatGs(selectedProducto.valor_stock)}</div>
+              </div>
+            </div>
+
+            {/* Tabla de movimientos */}
+            {loadingDetalle ? (
+              <div className="text-center py-8 text-muted-foreground">Cargando movimientos...</div>
+            ) : movimientos.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">Sin movimientos registrados</div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>Fecha</th>
+                      <th className="text-center">Tipo</th>
+                      <th className="text-right">Cant.</th>
+                      <th className="text-right">Costo Unit.</th>
+                      <th className="text-right">Stock Ant.</th>
+                      <th className="text-right">Stock Nuevo</th>
+                      <th>Referencia</th>
+                      <th>Motivo / Usuario</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {movimientos.map((mov, idx) => (
+                      <tr key={idx}>
+                        <td className="whitespace-nowrap text-sm">
+                          {mov.fecha ? new Date(mov.fecha).toLocaleDateString('es-PY') : '-'}
+                        </td>
+                        <td className="text-center">{tipoLabel(mov.tipo)}</td>
+                        <td className={`text-right font-mono font-semibold ${mov.tipo === 'entrada' ? 'text-green-600' : mov.tipo === 'salida' ? 'text-red-600' : 'text-yellow-600'}`}>
+                          {mov.tipo === 'entrada' ? '+' : mov.tipo === 'salida' ? '-' : '±'}{Math.abs(mov.cantidad)}
+                        </td>
+                        <td className="text-right font-mono text-sm">{formatGs(mov.costo_unitario || 0)}</td>
+                        <td className="text-right font-mono text-sm text-muted-foreground">{mov.stock_anterior ?? '-'}</td>
+                        <td className="text-right font-mono text-sm font-medium">{mov.stock_nuevo ?? '-'}</td>
+                        <td className="text-sm">{refLabel(mov.referencia_tipo)}</td>
+                        <td className="text-sm text-muted-foreground">
+                          <div>{mov.motivo || '-'}</div>
+                          {mov.usuario_email && <div className="text-xs">{mov.usuario_email}</div>}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+      </Modal>
+    </div>
+  );
+};
+
+
 function App() {
   const [user, setUser] = useState(null);
   const [authChecked, setAuthChecked] = useState(false);
@@ -2522,6 +3565,7 @@ function App() {
       case 'clientes': return <ClientesView user={user} />;
       case 'proveedores': return <ProveedoresView user={user} />;
       case 'gastos': return <GastosView user={user} />;
+      case 'inventario': return <InventarioView />;
       case 'reportes': return <ReportesView />;
       case 'stock-historial': return <StockHistorialView />;
       case 'usuarios': return <UsuariosView />;

@@ -127,6 +127,13 @@
   font-size: 0.875rem;
 }
 
+/* Allow Tailwind padding-left utilities to override form-input shorthand padding
+   (two-class selectors have higher specificity than the single .form-input rule) */
+.form-input.pl-8  { padding-left: 2rem; }
+.form-input.pl-9  { padding-left: 2.25rem; }
+.form-input.pl-10 { padding-left: 2.5rem; }
+.form-input.pl-12 { padding-left: 3rem; }
+
 /* Modal overlay */
 .modal-overlay {
   position: fixed;
@@ -141,9 +148,10 @@
   border-radius: 0.5rem;
   box-shadow: 0 25px 50px -12px rgb(0 0 0 / 0.25);
   padding: 1.5rem;
-  max-width: 32rem;
   width: 100%;
   margin: 0 1rem;
+  max-height: 90vh;
+  overflow-y: auto;
 }
 
 /* Price format */
