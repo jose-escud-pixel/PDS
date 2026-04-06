@@ -89,8 +89,12 @@ const api = {
   deleteProveedor: (id) => axios.delete(`${API_URL}/api/proveedores/${id}`),
   getVentas: (p) => axios.get(`${API_URL}/api/ventas`, { params: p }),
   createVenta: (d) => axios.post(`${API_URL}/api/ventas`, d),
+  updateVenta: (id, d) => axios.put(`${API_URL}/api/ventas/${id}`, d),
+  deleteVenta: (id) => axios.delete(`${API_URL}/api/ventas/${id}`),
   getCompras: (p) => axios.get(`${API_URL}/api/compras`, { params: p }),
   createCompra: (d) => axios.post(`${API_URL}/api/compras`, d),
+  updateCompra: (id, d) => axios.put(`${API_URL}/api/compras/${id}`, d),
+  deleteCompra: (id) => axios.delete(`${API_URL}/api/compras/${id}`),
   getGastos: (p) => axios.get(`${API_URL}/api/gastos`, { params: p }),
   createGasto: (d) => axios.post(`${API_URL}/api/gastos`, d),
   getAuditoria: (p) => axios.get(`${API_URL}/api/auditoria`, { params: p }),
@@ -1294,11 +1298,10 @@ function ProductosView({ user }) {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [showModal, setShowModal] = useState(false);
-  const [showAjusteModal, setShowAjusteModal] = useState(null);
   const [editItem, setEditItem] = useState(null);
   const [categorias, setCategorias] = useState([]);
-  const [form, setForm] = useState({ codigo: '', nombre: '', variante: '', categoria: '', proveedor: '', precio_con_iva: 0, costo: 0, stock: 0, stock_minimo: 2, iva_pct: 10, margen: 15 });
-  const [ajusteForm, setAjusteForm] = useState({ cantidad: 0, motivo: '' });
+  const [form, setForm] = useState({ codigo: '', nombre: '', variante: '', categoria: '', proveedor: '', precio_con_iva: 0, costo: 0, stock: 0, stock_minimo: 2, iva_pct: 10, margen: 15, utilidad: 20, precio_sugerido: 0 });
+  const calcPrecioSugerido = (costo, utilidad) => Math.round(parseFloat(costo || 0) * (1 + parseFloat(utilidad || 0) / 100));
   const isAdmin = user?.role === 'admin';
   const canCreate = hasPermission(user, 'productos', 'crear');
   const canEdit = hasPermission(user, 'productos', 'editar');
@@ -1317,8 +1320,8 @@ function ProductosView({ user }) {
 
   useEffect(() => { loadData(); }, [loadData]);
 
-  const openNew = () => { setEditItem(null); setForm({ codigo: '', nombre: '', variante: '', categoria: categorias[0] || '', proveedor: '', precio_con_iva: 0, costo: 0, stock: 0, stock_minimo: 2, iva_pct: 10, margen: 15 }); setShowModal(true); };
-  const openEdit = (p) => { setEditItem(p); setForm({ codigo: p.codigo, nombre: p.nombre, variante: p.variante || '', categoria: p.categoria, proveedor: p.proveedor || '', precio_con_iva: p.precio_con_iva, costo: p.costo, stock: p.stock, stock_minimo: p.stock_minimo, iva_pct: p.iva_pct || 10, margen: p.margen || 15 }); setShowModal(true); };
+  const openNew = () => { setEditItem(null); setForm({ codigo: '', nombre: '', variante: '', categoria: categorias[0] || '', proveedor: '', precio_con_iva: 0, costo: 0, stock: 0, stock_minimo: 2, iva_pct: 10, margen: 15, utilidad: 20, precio_sugerido: 0 }); setShowModal(true); };
+  const openEdit = (p) => { const utilidad = p.margen || 20; const precio_sugerido = p.precio_con_iva || Math.round((p.costo || 0) * (1 + utilidad / 100)); setEditItem(p); setForm({ codigo: p.codigo, nombre: p.nombre, variante: p.variante || '', categoria: p.categoria, proveedor: p.proveedor || '', precio_con_iva: p.precio_con_iva, costo: p.costo, stock: p.stock, stock_minimo: p.stock_minimo, iva_pct: p.iva_pct || 10, margen: p.margen || 15, utilidad, precio_sugerido }); setShowModal(true); };
 
   const handleSave = async () => {
     try {
@@ -1331,11 +1334,6 @@ function ProductosView({ user }) {
   const handleDelete = async (id) => {
     if (!window.confirm('¿Eliminar este producto?')) return;
     try { await api.deleteProducto(id); loadData(); } catch (e) { alert(formatApiError(e.response?.data?.detail)); }
-  };
-
-  const handleAjuste = async () => {
-    try { await api.ajustarStock(showAjusteModal.id, ajusteForm); setShowAjusteModal(null); loadData(); }
-    catch (e) { alert(formatApiError(e.response?.data?.detail)); }
   };
 
   return (
@@ -1351,21 +1349,20 @@ function ProductosView({ user }) {
       <div className="bg-white border border-border rounded-md overflow-hidden">
         <div className="overflow-x-auto max-h-[600px]">
           <table className="data-table">
-            <thead className="sticky top-0 bg-white"><tr><th>Código</th><th>Nombre</th><th>Categoría</th><th className="text-right">Costo</th><th className="text-right">Precio</th><th className="text-center">Stock</th>{(canEdit || canDelete) && <th className="text-center">Acciones</th>}</tr></thead>
+            <thead className="sticky top-0 bg-white"><tr><th>Código</th><th>Nombre</th><th>Categoría</th><th className="text-right">Costo c/IVA</th><th className="text-right">% Util.</th><th className="text-right">Precio Venta</th>{(canEdit || canDelete) && <th className="text-center">Acciones</th>}</tr></thead>
             <tbody>
               {loading ? <tr><td colSpan={7} className="text-center py-8">Cargando...</td></tr>
               : productos.length === 0 ? <tr><td colSpan={7} className="text-center py-8">Sin productos</td></tr>
               : productos.map(p => (
                 <tr key={p.id}>
                   <td className="font-mono text-sm">{p.codigo}</td>
-                  <td className="font-medium">{p.nombre}{p.variante ? <span className="text-muted-foreground text-xs ml-1">({p.variante})</span> : ''}</td>
+                  <td className="font-medium">{p.nombre}{p.variante ? <span className="text-sm font-normal ml-1"> | Variante: {p.variante}</span> : ''}</td>
                   <td><span className="badge bg-muted text-foreground">{p.categoria}</span></td>
-                  <td className="text-right text-sm">{formatGs(p.costo)}</td>
-                  <td className="text-right price-gs">{formatGs(p.precio_con_iva)}</td>
-                  <td className="text-center"><span className={p.stock <= p.stock_minimo ? 'text-red-600 font-semibold' : 'text-green-600'}>{p.stock}</span></td>
+                  <td className="text-right text-sm tabular-nums">{formatGs(p.costo)}</td>
+                  <td className="text-right text-sm tabular-nums">{p.margen || p.utilidad || '—'}%</td>
+                  <td className="text-right price-gs tabular-nums">{formatGs(p.precio_con_iva)}</td>
                   {(canEdit || canDelete) && <td className="text-center">
                     <div className="flex items-center justify-center gap-1">
-                      {canEdit && <button onClick={() => { setShowAjusteModal(p); setAjusteForm({ cantidad: 0, motivo: '' }); }} className="p-1 hover:bg-blue-50 rounded text-blue-600" title="Ajustar stock"><Package size={16} /></button>}
                       {canEdit && <button onClick={() => openEdit(p)} className="p-1 hover:bg-yellow-50 rounded text-yellow-600" title="Editar"><Pencil size={16} /></button>}
                       {canDelete && <button onClick={() => handleDelete(p.id)} className="p-1 hover:bg-red-50 rounded text-red-600" title="Eliminar"><Trash size={16} /></button>}
                     </div>
@@ -1385,10 +1382,22 @@ function ProductosView({ user }) {
           <div className="form-group"><label className="form-label">Categoría *</label><input type="text" value={form.categoria} onChange={(e) => setForm({...form, categoria: e.target.value})} className="form-input" list="categorias-list" /><datalist id="categorias-list">{categorias.map(c => <option key={c} value={c} />)}</datalist></div>
           <div className="form-group"><label className="form-label">Proveedor</label><input type="text" value={form.proveedor} onChange={(e) => setForm({...form, proveedor: e.target.value})} className="form-input" /></div>
           <div className="form-group"><label className="form-label">IVA %</label><input type="number" value={form.iva_pct} onChange={(e) => setForm({...form, iva_pct: parseInt(e.target.value) || 0})} className="form-input" /></div>
-          <div className="form-group"><label className="form-label">Costo</label><input type="number" value={form.costo} onChange={(e) => setForm({...form, costo: parseFloat(e.target.value) || 0})} className="form-input" /></div>
-          <div className="form-group"><label className="form-label">Precio con IVA</label><input type="number" value={form.precio_con_iva} onChange={(e) => setForm({...form, precio_con_iva: parseFloat(e.target.value) || 0})} className="form-input" /></div>
-          <div className="form-group"><label className="form-label">Stock</label><input type="number" value={form.stock} onChange={(e) => setForm({...form, stock: parseInt(e.target.value) || 0})} className="form-input" /></div>
-          <div className="form-group"><label className="form-label">Stock Mínimo</label><input type="number" value={form.stock_minimo} onChange={(e) => setForm({...form, stock_minimo: parseInt(e.target.value) || 0})} className="form-input" /></div>
+          <div className="form-group col-span-2">
+            <label className="form-label">Costo con IVA <span className="text-xs text-muted-foreground">(precio de compra incluye IVA)</span></label>
+            <input type="number" value={form.costo} onChange={(e) => { const costo = parseFloat(e.target.value) || 0; const sugerido = Math.round(costo * (1 + (form.utilidad || 0) / 100)); setForm({...form, costo, precio_con_iva: sugerido, precio_sugerido: sugerido}); }} className="form-input" data-testid="producto-costo" />
+          </div>
+          <div className="form-group">
+            <label className="form-label">% Utilidad esperada</label>
+            <input type="number" value={form.utilidad} onChange={(e) => { const utilidad = parseFloat(e.target.value) || 0; const sugerido = Math.round((form.costo || 0) * (1 + utilidad / 100)); setForm({...form, utilidad, margen: utilidad, precio_con_iva: sugerido, precio_sugerido: sugerido}); }} className="form-input" placeholder="Ej: 20" />
+          </div>
+          <div className="form-group">
+            <label className="form-label">Precio de venta sugerido <span className="text-xs text-blue-600">(editable)</span></label>
+            <input type="number" value={form.precio_sugerido || form.precio_con_iva} onChange={(e) => { const val = parseFloat(e.target.value) || 0; setForm({...form, precio_sugerido: val, precio_con_iva: val}); }} className="form-input font-semibold text-blue-700" />
+            {form.costo > 0 && <p className="text-xs text-muted-foreground mt-1">Gs. {(form.costo || 0).toLocaleString('es-PY')} × {form.utilidad}% = Gs. {Math.round((form.costo || 0) * (1 + (form.utilidad || 0) / 100)).toLocaleString('es-PY')}</p>}
+          </div>
+          <div className="col-span-2 bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-700">
+            El stock se gestiona desde el módulo de <strong>Compras</strong> (entradas) y <strong>Ventas</strong> (salidas).
+          </div>
         </div>
         <div className="flex justify-end gap-3 mt-6">
           <button onClick={() => setShowModal(false)} className="px-4 py-2 border border-border rounded-md hover:bg-muted">Cancelar</button>
@@ -1396,17 +1405,7 @@ function ProductosView({ user }) {
         </div>
       </Modal>
 
-      <Modal isOpen={!!showAjusteModal} onClose={() => setShowAjusteModal(null)} title={`Ajustar Stock: ${showAjusteModal?.nombre || ''}`} size="sm">
-        <div className="space-y-4">
-          <p className="text-sm text-muted-foreground">Stock actual: <strong>{showAjusteModal?.stock}</strong></p>
-          <div className="form-group"><label className="form-label">Cantidad (+ entrada, - salida)</label><input type="number" value={ajusteForm.cantidad} onChange={(e) => setAjusteForm({...ajusteForm, cantidad: parseInt(e.target.value) || 0})} className="form-input" /></div>
-          <div className="form-group"><label className="form-label">Motivo *</label><input type="text" value={ajusteForm.motivo} onChange={(e) => setAjusteForm({...ajusteForm, motivo: e.target.value})} className="form-input" placeholder="Ej: Ajuste por inventario" /></div>
-          <div className="flex justify-end gap-3">
-            <button onClick={() => setShowAjusteModal(null)} className="px-4 py-2 border border-border rounded-md hover:bg-muted">Cancelar</button>
-            <button onClick={handleAjuste} disabled={!ajusteForm.motivo} className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 disabled:opacity-50">Ajustar</button>
-          </div>
-        </div>
-      </Modal>
+
     </div>
   );
 }
@@ -1417,11 +1416,17 @@ function VentasView({ user }) {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [showModal, setShowModal] = useState(false);
+  const [showDetalleModal, setShowDetalleModal] = useState(null);
+  const [editItem, setEditItem] = useState(null);
   const [clientes, setClientes] = useState([]);
   const [productos, setProductos] = useState([]);
-  const [form, setForm] = useState({ cliente_id: '', cliente_nombre: '', items: [], observaciones: '' });
-  const [itemForm, setItemForm] = useState({ producto_id: '', cantidad: 1 });
-  const isAdmin = user?.role === 'admin';
+  const [productoSearch, setProductoSearch] = useState('');
+  const [showProductoSugg, setShowProductoSugg] = useState(false);
+  const emptyForm = { cliente_id: '', cliente_nombre: '', fecha: new Date().toISOString().split('T')[0], items: [], observaciones: '' };
+  const [form, setForm] = useState(emptyForm);
+  const [itemForm, setItemForm] = useState({ producto_id: '', cantidad: 1, precio_unitario: 0, costo_unitario: 0, stock: 0 });
+  const canEdit = hasPermission(user, 'ventas', 'editar');
+  const canDelete = hasPermission(user, 'ventas', 'eliminar');
 
   const loadData = useCallback(() => {
     setLoading(true);
@@ -1430,35 +1435,112 @@ function VentasView({ user }) {
 
   useEffect(() => { loadData(); }, [loadData]);
 
-  const openNew = async () => {
+  const loadClientesProd = async () => {
     const [cRes, pRes] = await Promise.all([api.getClientes({}), api.getProductos({})]);
     setClientes(cRes.data.clientes || []);
     setProductos(pRes.data.productos || []);
-    setForm({ cliente_id: '', cliente_nombre: '', items: [], observaciones: '' });
+  };
+
+  const openNew = async () => {
+    await loadClientesProd();
+    setEditItem(null);
+    setForm(emptyForm);
+    setProductoSearch('');
     setShowModal(true);
   };
 
-  const addItem = () => {
-    const prod = productos.find(p => p.id === itemForm.producto_id);
-    if (!prod || itemForm.cantidad < 1) return;
-    if (form.items.find(i => i.producto_id === prod.id)) return alert('Producto ya agregado');
-    setForm({...form, items: [...form.items, { producto_id: prod.id, codigo: prod.codigo, nombre: prod.nombre, cantidad: itemForm.cantidad, precio_unitario: prod.precio_con_iva, costo_unitario: prod.costo, iva_pct: prod.iva_pct || 10 }]});
-    setItemForm({ producto_id: '', cantidad: 1 });
+  const openEdit = async (v) => {
+    await loadClientesProd();
+    setEditItem(v);
+    setForm({
+      cliente_id: v.cliente_id,
+      cliente_nombre: v.cliente_nombre,
+      fecha: v.fecha ? v.fecha.split('T')[0] : new Date().toISOString().split('T')[0],
+      items: v.items || [],
+      observaciones: v.observaciones || ''
+    });
+    setProductoSearch('');
+    setShowModal(true);
   };
 
-  const removeItem = (idx) => setForm({...form, items: form.items.filter((_, i) => i !== idx)});
+  const handleDelete = async (id) => {
+    if (!window.confirm('¿Eliminar esta venta? Esto repondrá el stock descontado.')) return;
+    try { await axios.delete(`${API_URL}/api/ventas/${id}`, { withCredentials: true }); loadData(); }
+    catch (e) { alert(formatApiError(e.response?.data?.detail)); }
+  };
 
   const selectCliente = (id) => {
     const c = clientes.find(cl => cl.id === id);
-    setForm({...form, cliente_id: id, cliente_nombre: c?.nombre || ''});
+    setForm(f => ({...f, cliente_id: id, cliente_nombre: c?.nombre || ''}));
   };
 
-  const total = form.items.reduce((s, i) => s + i.precio_unitario * i.cantidad, 0);
+  // Autocomplete productos — solo con stock
+  const productosFiltrados = productoSearch.length >= 1
+    ? productos.filter(p => {
+        const q = productoSearch.toLowerCase();
+        return (p.codigo?.toLowerCase().includes(q) || p.nombre?.toLowerCase().includes(q) || p.variante?.toLowerCase().includes(q));
+      }).slice(0, 8)
+    : [];
+
+  const selectProductoSugg = (prod) => {
+    setItemForm({ producto_id: prod.id, cantidad: 1, precio_unitario: prod.precio_con_iva || 0, costo_unitario: prod.costo || 0, stock: prod.stock || 0 });
+    setProductoSearch(`${prod.codigo} | ${prod.nombre}${prod.variante ? ' | Variante: ' + prod.variante : ''}`);
+    setShowProductoSugg(false);
+  };
+
+  const addItem = () => {
+    if (!itemForm.producto_id || itemForm.cantidad < 1) return;
+    const prod = productos.find(p => p.id === itemForm.producto_id);
+    if (!prod) return;
+    if (itemForm.cantidad > prod.stock) return alert(`Stock insuficiente. Disponible: ${prod.stock}`);
+    if (form.items.find(i => i.producto_id === prod.id)) return alert('Producto ya agregado');
+    setForm(f => ({...f, items: [...f.items, {
+      producto_id: prod.id,
+      codigo: prod.codigo,
+      nombre: prod.nombre,
+      variante: prod.variante || '',
+      cantidad: itemForm.cantidad,
+      precio_unitario: itemForm.precio_unitario,
+      costo_unitario: prod.costo || 0,
+      iva_pct: prod.iva_pct || 10,
+      stock_disponible: prod.stock
+    }]}));
+    setItemForm({ producto_id: '', cantidad: 1, precio_unitario: 0, costo_unitario: 0, stock: 0 });
+    setProductoSearch('');
+  };
+
+  const removeItem = (idx) => setForm(f => ({...f, items: f.items.filter((_, i) => i !== idx)}));
+  const updateItem = (idx, field, val) => setForm(f => ({...f, items: f.items.map((it, i) => i === idx ? {...it, [field]: val} : it)}));
+
+  const total = form.items.reduce((s, i) => s + (i.precio_unitario * i.cantidad), 0);
+  const totalCosto = form.items.reduce((s, i) => s + (i.costo_unitario * i.cantidad), 0);
+  const utilidadTotal = total - totalCosto;
 
   const handleSave = async () => {
     if (!form.cliente_id || form.items.length === 0) return alert('Seleccione cliente y agregue productos');
-    try { await api.createVenta(form); setShowModal(false); loadData(); }
-    catch (e) { alert(formatApiError(e.response?.data?.detail)); }
+    // Validar stock
+    for (const item of form.items) {
+      const prod = productos.find(p => p.id === item.producto_id);
+      if (prod && item.cantidad > prod.stock && !editItem) return alert(`Stock insuficiente para ${item.nombre}. Disponible: ${prod.stock}`);
+    }
+    try {
+      const payload = { ...form };
+      if (editItem) { await axios.put(`${API_URL}/api/ventas/${editItem.id}`, payload, { withCredentials: true }); }
+      else { await api.createVenta(payload); }
+      setShowModal(false); loadData();
+    } catch (e) { alert(formatApiError(e.response?.data?.detail)); }
+  };
+
+  const filteredVentas = ventas.filter(v =>
+    !search || v.cliente_nombre?.toLowerCase().includes(search.toLowerCase()) || v.fecha?.includes(search)
+  );
+
+  const itemsLabel = (items) => {
+    if (!items || items.length === 0) return '—';
+    const first = items[0];
+    const nombre = first.nombre + (first.variante ? ` | Variante: ${first.variante}` : '');
+    if (items.length === 1) return nombre;
+    return `${nombre} + ${items.length - 1} más`;
   };
 
   return (
@@ -1469,63 +1551,195 @@ function VentasView({ user }) {
       </div>
       <div className="relative max-w-md">
         <MagnifyingGlass size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-        <input type="text" placeholder="Buscar por cliente, fecha..." value={search} onChange={(e) => setSearch(e.target.value)} className="form-input pl-10" data-testid="ventas-search" />
+        <input type="text" placeholder="Buscar por cliente..." value={search} onChange={(e) => setSearch(e.target.value)} className="form-input pl-10" />
       </div>
+
       <div className="bg-white border border-border rounded-md">
         <div className="overflow-x-auto max-h-[600px]">
           <table className="data-table">
-            <thead className="sticky top-0 bg-white"><tr><th>Fecha</th><th>Cliente</th><th className="text-center">Items</th><th className="text-right">Total</th><th className="text-right">Utilidad</th></tr></thead>
+            <thead className="sticky top-0 bg-white">
+              <tr><th>Fecha</th><th>Cliente</th><th>Productos</th><th className="text-right">Total</th><th className="text-right">Utilidad</th><th className="text-center">Acciones</th></tr>
+            </thead>
             <tbody>
-              {loading ? <tr><td colSpan={5} className="text-center py-8">Cargando...</td></tr>
-              : ventas.length === 0 ? <tr><td colSpan={5} className="text-center py-8">Sin ventas registradas</td></tr>
-              : ventas.filter(v => !search || v.cliente_nombre?.toLowerCase().includes(search.toLowerCase()) || v.fecha?.includes(search)).map(v => (
-                <tr key={v.id}><td>{new Date(v.fecha).toLocaleDateString('es-PY')}</td><td className="font-medium">{v.cliente_nombre}</td><td className="text-center">{v.items?.length || 0}</td><td className="text-right price-gs">{formatGs(v.total)}</td><td className="text-right price-gs text-green-600">{formatGs(v.utilidad)}</td></tr>
+              {loading ? <tr><td colSpan={6} className="text-center py-8">Cargando...</td></tr>
+              : filteredVentas.length === 0 ? <tr><td colSpan={6} className="text-center py-8">Sin ventas registradas</td></tr>
+              : filteredVentas.map(v => (
+                <tr key={v.id}>
+                  <td className="text-sm tabular-nums">{new Date(v.fecha).toLocaleDateString('es-PY')}</td>
+                  <td className="font-medium">{v.cliente_nombre}</td>
+                  <td className="text-sm max-w-xs truncate">{itemsLabel(v.items)}</td>
+                  <td className="text-right price-gs tabular-nums">{formatGs(v.total)}</td>
+                  <td className="text-right tabular-nums font-medium text-green-600">{formatGs(v.utilidad)}</td>
+                  <td className="text-center">
+                    <div className="flex items-center justify-center gap-1">
+                      <button onClick={() => setShowDetalleModal(v)} className="p-1 hover:bg-blue-50 rounded text-blue-600" title="Ver detalle"><Eye size={16} /></button>
+                      {canEdit && <button onClick={() => openEdit(v)} className="p-1 hover:bg-yellow-50 rounded text-yellow-600" title="Editar"><Pencil size={16} /></button>}
+                      {canDelete && <button onClick={() => handleDelete(v.id)} className="p-1 hover:bg-red-50 rounded text-red-600" title="Eliminar"><Trash size={16} /></button>}
+                    </div>
+                  </td>
+                </tr>
               ))}
             </tbody>
           </table>
         </div>
       </div>
 
-      <Modal isOpen={showModal} onClose={() => setShowModal(false)} title="Nueva Venta" size="xl">
+      {/* Modal detalle */}
+      <Modal isOpen={!!showDetalleModal} onClose={() => setShowDetalleModal(null)} title="Detalle de Venta" size="xl">
+        {showDetalleModal && (
+          <div className="space-y-4">
+            <div className="grid grid-cols-3 gap-4 bg-muted/40 rounded-lg p-4 text-sm">
+              <div><p className="text-muted-foreground">Cliente</p><p className="font-semibold">{showDetalleModal.cliente_nombre}</p></div>
+              <div><p className="text-muted-foreground">Fecha</p><p className="font-semibold">{new Date(showDetalleModal.fecha).toLocaleDateString('es-PY')}</p></div>
+              <div><p className="text-muted-foreground">Vendedor</p><p className="font-semibold">{showDetalleModal.vendedor || '—'}</p></div>
+            </div>
+            <table className="data-table">
+              <thead><tr><th>Producto</th><th className="text-center">Cant.</th><th className="text-right">Precio</th><th className="text-right">Costo Unit.</th><th className="text-right">Subtotal</th><th className="text-right text-green-700">Utilidad</th></tr></thead>
+              <tbody>
+                {showDetalleModal.items?.map((item, i) => {
+                  const util = (item.precio_unitario - item.costo_unitario) * item.cantidad;
+                  return (
+                    <tr key={i}>
+                      <td>{item.nombre}{item.variante ? <span className="text-sm ml-1"> | Variante: {item.variante}</span> : ''}</td>
+                      <td className="text-center tabular-nums">{item.cantidad}</td>
+                      <td className="text-right tabular-nums">{formatGs(item.precio_unitario)}</td>
+                      <td className="text-right tabular-nums text-muted-foreground">{formatGs(item.costo_unitario)}</td>
+                      <td className="text-right tabular-nums font-medium">{formatGs(item.precio_unitario * item.cantidad)}</td>
+                      <td className="text-right tabular-nums text-green-600 font-medium">{formatGs(util)}</td>
+                    </tr>
+                  );
+                })}
+                <tr className="font-bold bg-muted">
+                  <td colSpan={4} className="text-right">TOTAL:</td>
+                  <td className="text-right tabular-nums text-lg">{formatGs(showDetalleModal.total)}</td>
+                  <td className="text-right tabular-nums text-green-600 text-lg">{formatGs(showDetalleModal.utilidad)}</td>
+                </tr>
+              </tbody>
+            </table>
+            {showDetalleModal.observaciones && <p className="text-sm text-muted-foreground">Obs: {showDetalleModal.observaciones}</p>}
+          </div>
+        )}
+      </Modal>
+
+      {/* Modal crear/editar */}
+      <Modal isOpen={showModal} onClose={() => setShowModal(false)} title={editItem ? 'Editar Venta' : 'Nueva Venta'} size="xl">
         <div className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <div className="form-group">
+          <div className="grid grid-cols-4 gap-4">
+            <div className="form-group col-span-2">
               <label className="form-label">Cliente *</label>
               <select value={form.cliente_id} onChange={(e) => selectCliente(e.target.value)} className="form-input" data-testid="venta-cliente">
                 <option value="">Seleccionar cliente...</option>
                 {clientes.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
               </select>
             </div>
-            <div className="form-group"><label className="form-label">Observaciones</label><input type="text" value={form.observaciones} onChange={(e) => setForm({...form, observaciones: e.target.value})} className="form-input" /></div>
-          </div>
-          <div className="border border-border rounded-lg p-4">
-            <h4 className="font-semibold text-sm mb-3">Agregar Productos</h4>
-            <div className="flex gap-2 items-end">
-              <div className="flex-1 form-group mb-0">
-                <select value={itemForm.producto_id} onChange={(e) => setItemForm({...itemForm, producto_id: e.target.value})} className="form-input" data-testid="venta-producto-select">
-                  <option value="">Seleccionar producto...</option>
-                  {productos.filter(p => p.stock > 0).map(p => <option key={p.id} value={p.id}>{p.codigo} - {p.nombre} (Stock: {p.stock}) - {formatGs(p.precio_con_iva)}</option>)}
-                </select>
-              </div>
-              <div className="w-24 form-group mb-0"><input type="number" value={itemForm.cantidad} onChange={(e) => setItemForm({...itemForm, cantidad: parseInt(e.target.value) || 1})} className="form-input" min="1" placeholder="Cant." /></div>
-              <button onClick={addItem} className="px-3 py-2 bg-green-600 text-white rounded-md hover:bg-green-700" data-testid="add-item-btn"><Plus size={18} /></button>
+            <div className="form-group">
+              <label className="form-label">Fecha de venta</label>
+              <input type="date" value={form.fecha} onChange={(e) => setForm(f => ({...f, fecha: e.target.value}))} className="form-input" />
             </div>
+            <div className="form-group">
+              <label className="form-label">Observaciones</label>
+              <input type="text" value={form.observaciones} onChange={(e) => setForm(f => ({...f, observaciones: e.target.value}))} className="form-input" />
+            </div>
+          </div>
+
+          <div className="border border-border rounded-lg p-4 space-y-3">
+            <h4 className="font-semibold text-sm">Agregar Productos</h4>
+            <div className="flex gap-2 items-end">
+              <div className="flex-1 form-group mb-0 relative">
+                <input
+                  type="text"
+                  value={productoSearch}
+                  onChange={(e) => { setProductoSearch(e.target.value); setShowProductoSugg(true); setItemForm(f => ({...f, producto_id: ''})); }}
+                  onFocus={() => setShowProductoSugg(true)}
+                  onBlur={() => setTimeout(() => setShowProductoSugg(false), 150)}
+                  placeholder="Buscar por código, nombre o variante..."
+                  className="form-input"
+                />
+                {showProductoSugg && productosFiltrados.length > 0 && (
+                  <div className="absolute z-50 top-full left-0 right-0 bg-white border border-border rounded-md shadow-lg mt-1 max-h-48 overflow-y-auto">
+                    {productosFiltrados.map(p => (
+                      <button key={p.id} onMouseDown={() => selectProductoSugg(p)}
+                        className={`w-full text-left px-3 py-2 hover:bg-muted text-sm ${p.stock === 0 ? 'opacity-40 cursor-not-allowed' : ''}`}
+                        disabled={p.stock === 0}>
+                        <span className="font-mono text-xs text-muted-foreground">{p.codigo}</span>
+                        <span className="mx-1">|</span>
+                        <span className="font-medium">{p.nombre}</span>
+                        {p.variante && <span className="text-muted-foreground ml-1">| Variante: {p.variante}</span>}
+                        <span className={`float-right text-xs font-medium ${p.stock <= (p.stock_minimo || 2) ? 'text-red-500' : 'text-green-600'}`}>
+                          Stock: {p.stock}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div className="w-24 form-group mb-0">
+                <input type="number" value={itemForm.cantidad} min="1" max={itemForm.stock || 9999}
+                  onChange={(e) => setItemForm(f => ({...f, cantidad: parseInt(e.target.value) || 1}))}
+                  className="form-input" placeholder="Cant." />
+                {itemForm.stock > 0 && <p className="text-xs text-muted-foreground mt-0.5 text-center">Disp: {itemForm.stock}</p>}
+              </div>
+              <div className="w-36 form-group mb-0">
+                <input type="number" value={itemForm.precio_unitario}
+                  onChange={(e) => setItemForm(f => ({...f, precio_unitario: parseFloat(e.target.value) || 0}))}
+                  className="form-input" placeholder="Precio venta" />
+              </div>
+              <button onClick={addItem} disabled={!itemForm.producto_id} className="px-3 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-40"><Plus size={18} /></button>
+            </div>
+
             {form.items.length > 0 && (
-              <table className="data-table mt-3">
-                <thead><tr><th>Producto</th><th className="text-center">Cant.</th><th className="text-right">Precio</th><th className="text-right">Subtotal</th><th></th></tr></thead>
+              <table className="data-table mt-2">
+                <thead>
+                  <tr><th>Producto</th><th className="text-center w-20">Cant.</th><th className="text-right w-36">Precio Venta</th><th className="text-right w-28">Costo</th><th className="text-right w-36">Subtotal</th><th className="text-right w-28 text-green-700">Utilidad</th><th className="w-8"></th></tr>
+                </thead>
                 <tbody>
-                  {form.items.map((item, i) => (
-                    <tr key={i}><td>{item.nombre}</td><td className="text-center">{item.cantidad}</td><td className="text-right">{formatGs(item.precio_unitario)}</td><td className="text-right font-medium">{formatGs(item.precio_unitario * item.cantidad)}</td>
-                    <td className="text-center"><button onClick={() => removeItem(i)} className="text-red-500 hover:text-red-700"><X size={16} /></button></td></tr>
-                  ))}
-                  <tr className="font-semibold bg-muted"><td colSpan={3} className="text-right">TOTAL:</td><td className="text-right text-lg">{formatGs(total)}</td><td></td></tr>
+                  {form.items.map((item, i) => {
+                    const util = (item.precio_unitario - item.costo_unitario) * item.cantidad;
+                    return (
+                      <tr key={i}>
+                        <td>
+                          <span className="font-medium">{item.nombre}</span>
+                          {item.variante && <span className="text-sm ml-1"> | Variante: {item.variante}</span>}
+                          {item.stock_disponible !== undefined && <span className="text-xs text-muted-foreground ml-2">(Stock: {item.stock_disponible})</span>}
+                        </td>
+                        <td className="text-center">
+                          <input type="number" value={item.cantidad} min="1"
+                            onChange={(e) => {
+                              const cant = parseInt(e.target.value) || 1;
+                              const prod = productos.find(p => p.id === item.producto_id);
+                              if (prod && cant > prod.stock && !editItem) return alert(`Stock insuficiente. Disponible: ${prod.stock}`);
+                              updateItem(i, 'cantidad', cant);
+                            }}
+                            className="form-input text-center w-16 py-1 text-sm" />
+                        </td>
+                        <td className="text-right">
+                          <input type="number" value={item.precio_unitario}
+                            onChange={(e) => updateItem(i, 'precio_unitario', parseFloat(e.target.value) || 0)}
+                            className="form-input text-right w-32 py-1 text-sm" />
+                        </td>
+                        <td className="text-right tabular-nums text-muted-foreground text-sm">{formatGs(item.costo_unitario)}</td>
+                        <td className="text-right tabular-nums font-medium">{formatGs(item.precio_unitario * item.cantidad)}</td>
+                        <td className={`text-right tabular-nums font-medium ${util >= 0 ? 'text-green-600' : 'text-red-600'}`}>{formatGs(util)}</td>
+                        <td className="text-center"><button onClick={() => removeItem(i)} className="text-red-500 hover:text-red-700"><X size={16} /></button></td>
+                      </tr>
+                    );
+                  })}
+                  <tr className="font-bold bg-muted">
+                    <td colSpan={4} className="text-right">TOTAL:</td>
+                    <td className="text-right tabular-nums text-lg">{formatGs(total)}</td>
+                    <td className="text-right tabular-nums text-green-600 text-lg">{formatGs(utilidadTotal)}</td>
+                    <td></td>
+                  </tr>
                 </tbody>
               </table>
             )}
           </div>
+
           <div className="flex justify-end gap-3">
             <button onClick={() => setShowModal(false)} className="px-4 py-2 border border-border rounded-md hover:bg-muted">Cancelar</button>
-            <button onClick={handleSave} disabled={!form.cliente_id || form.items.length === 0} className="bg-[#E63946] text-white px-4 py-2 rounded-md hover:bg-[#D90429] disabled:opacity-50" data-testid="save-venta-btn">Registrar Venta</button>
+            <button onClick={handleSave} disabled={!form.cliente_id || form.items.length === 0} className="bg-[#E63946] text-white px-4 py-2 rounded-md hover:bg-[#D90429] disabled:opacity-50" data-testid="save-venta-btn">
+              {editItem ? 'Guardar Cambios' : 'Registrar Venta'}
+            </button>
           </div>
         </div>
       </Modal>
@@ -1539,10 +1753,17 @@ function ComprasView({ user }) {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [showModal, setShowModal] = useState(false);
+  const [showDetalleModal, setShowDetalleModal] = useState(null);
+  const [editItem, setEditItem] = useState(null);
   const [proveedores, setProveedores] = useState([]);
   const [productos, setProductos] = useState([]);
-  const [form, setForm] = useState({ proveedor_id: '', proveedor_nombre: '', factura: '', items: [], observaciones: '' });
-  const [itemForm, setItemForm] = useState({ producto_id: '', cantidad: 1, precio_unitario: 0 });
+  const [productoSearch, setProductoSearch] = useState('');
+  const [showProductoSugg, setShowProductoSugg] = useState(false);
+  const emptyForm = { proveedor_id: '', proveedor_nombre: '', factura: '', fecha: new Date().toISOString().split('T')[0], items: [], observaciones: '' };
+  const [form, setForm] = useState(emptyForm);
+  const [itemForm, setItemForm] = useState({ producto_id: '', cantidad: 1, precio_unitario: 0, variante: '' });
+  const canEdit = hasPermission(user, 'compras', 'editar');
+  const canDelete = hasPermission(user, 'compras', 'eliminar');
 
   const loadData = useCallback(() => {
     setLoading(true);
@@ -1551,33 +1772,100 @@ function ComprasView({ user }) {
 
   useEffect(() => { loadData(); }, [loadData]);
 
-  const openNew = async () => {
+  const loadProvProd = async () => {
     const [provRes, prodRes] = await Promise.all([api.getProveedores({}), api.getProductos({})]);
     setProveedores(provRes.data.proveedores || []);
     setProductos(prodRes.data.productos || []);
-    setForm({ proveedor_id: '', proveedor_nombre: '', factura: '', items: [], observaciones: '' });
+  };
+
+  const openNew = async () => {
+    await loadProvProd();
+    setEditItem(null);
+    setForm(emptyForm);
+    setProductoSearch('');
     setShowModal(true);
+  };
+
+  const openEdit = async (c) => {
+    await loadProvProd();
+    setEditItem(c);
+    setForm({
+      proveedor_id: c.proveedor_id,
+      proveedor_nombre: c.proveedor_nombre,
+      factura: c.factura || '',
+      fecha: c.fecha ? c.fecha.split('T')[0] : new Date().toISOString().split('T')[0],
+      items: c.items || [],
+      observaciones: c.observaciones || ''
+    });
+    setProductoSearch('');
+    setShowModal(true);
+  };
+
+  const handleDelete = async (id) => {
+    if (!window.confirm('¿Eliminar esta compra? Esto revertirá el stock agregado.')) return;
+    try { await axios.delete(`${API_URL}/api/compras/${id}`, { withCredentials: true }); loadData(); }
+    catch (e) { alert(formatApiError(e.response?.data?.detail)); }
   };
 
   const selectProveedor = (id) => {
     const p = proveedores.find(pr => pr.id === id);
-    setForm({...form, proveedor_id: id, proveedor_nombre: p?.nombre || ''});
+    setForm(f => ({...f, proveedor_id: id, proveedor_nombre: p?.nombre || ''}));
+  };
+
+  // Autocomplete productos
+  const productosFiltrados = productoSearch.length >= 1
+    ? productos.filter(p => {
+        const q = productoSearch.toLowerCase();
+        return p.codigo?.toLowerCase().includes(q) || p.nombre?.toLowerCase().includes(q) || p.variante?.toLowerCase().includes(q);
+      }).slice(0, 8)
+    : [];
+
+  const selectProductoSugg = (prod) => {
+    setItemForm({ producto_id: prod.id, cantidad: 1, precio_unitario: prod.costo || 0, variante: prod.variante || '' });
+    setProductoSearch(`${prod.codigo} | ${prod.nombre}${prod.variante ? ' | Variante: ' + prod.variante : ''}`);
+    setShowProductoSugg(false);
   };
 
   const addItem = () => {
+    if (!itemForm.producto_id || itemForm.cantidad < 1) return;
     const prod = productos.find(p => p.id === itemForm.producto_id);
-    if (!prod || itemForm.cantidad < 1) return;
-    setForm({...form, items: [...form.items, { producto_id: prod.id, codigo: prod.codigo, nombre: prod.nombre, cantidad: itemForm.cantidad, precio_unitario: itemForm.precio_unitario || prod.costo, iva_pct: prod.iva_pct || 10 }]});
-    setItemForm({ producto_id: '', cantidad: 1, precio_unitario: 0 });
+    if (!prod) return;
+    setForm(f => ({...f, items: [...f.items, {
+      producto_id: prod.id, codigo: prod.codigo, nombre: prod.nombre,
+      variante: prod.variante || '', cantidad: itemForm.cantidad,
+      precio_unitario: itemForm.precio_unitario || prod.costo || 0,
+      iva_pct: prod.iva_pct || 10
+    }]}));
+    setItemForm({ producto_id: '', cantidad: 1, precio_unitario: 0, variante: '' });
+    setProductoSearch('');
   };
 
-  const removeItem = (idx) => setForm({...form, items: form.items.filter((_, i) => i !== idx)});
-  const total = form.items.reduce((s, i) => s + i.precio_unitario * i.cantidad, 0);
+  const removeItem = (idx) => setForm(f => ({...f, items: f.items.filter((_, i) => i !== idx)}));
+  const updateItem = (idx, field, val) => setForm(f => ({...f, items: f.items.map((it, i) => i === idx ? {...it, [field]: val} : it)}));
+  const total = form.items.reduce((s, i) => s + (i.precio_unitario * i.cantidad), 0);
 
   const handleSave = async () => {
     if (!form.proveedor_id || form.items.length === 0) return alert('Seleccione proveedor y agregue productos');
-    try { await api.createCompra(form); setShowModal(false); loadData(); }
-    catch (e) { alert(formatApiError(e.response?.data?.detail)); }
+    try {
+      const payload = { ...form, fecha: form.fecha };
+      if (editItem) { await axios.put(`${API_URL}/api/compras/${editItem.id}`, payload, { withCredentials: true }); }
+      else { await api.createCompra(payload); }
+      setShowModal(false); loadData();
+    } catch (e) { alert(formatApiError(e.response?.data?.detail)); }
+  };
+
+  const filteredCompras = compras.filter(c =>
+    !search ||
+    c.proveedor_nombre?.toLowerCase().includes(search.toLowerCase()) ||
+    c.factura?.toLowerCase().includes(search.toLowerCase())
+  );
+
+  const itemsLabel = (items) => {
+    if (!items || items.length === 0) return '—';
+    const first = items[0];
+    const nombre = first.nombre + (first.variante ? ` | Variante: ${first.variante}` : '');
+    if (items.length === 1) return nombre;
+    return `${nombre} + ${items.length - 1} más`;
   };
 
   return (
@@ -1588,65 +1876,166 @@ function ComprasView({ user }) {
       </div>
       <div className="relative max-w-md">
         <MagnifyingGlass size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-        <input type="text" placeholder="Buscar por proveedor, factura..." value={search} onChange={(e) => setSearch(e.target.value)} className="form-input pl-10" data-testid="compras-search" />
+        <input type="text" placeholder="Buscar por proveedor, factura..." value={search} onChange={(e) => setSearch(e.target.value)} className="form-input pl-10" />
       </div>
       <div className="bg-white border border-border rounded-md">
         <div className="overflow-x-auto max-h-[600px]">
           <table className="data-table">
-            <thead className="sticky top-0 bg-white"><tr><th>Fecha</th><th>Proveedor</th><th>Factura</th><th className="text-center">Items</th><th className="text-right">Total</th></tr></thead>
+            <thead className="sticky top-0 bg-white">
+              <tr><th>Fecha</th><th>Proveedor</th><th>Factura</th><th>Productos</th><th className="text-right">Total</th><th className="text-center">Acciones</th></tr>
+            </thead>
             <tbody>
-              {loading ? <tr><td colSpan={5} className="text-center py-8">Cargando...</td></tr>
-              : compras.length === 0 ? <tr><td colSpan={5} className="text-center py-8">Sin compras registradas</td></tr>
-              : compras.filter(c => !search || c.proveedor_nombre?.toLowerCase().includes(search.toLowerCase()) || c.factura?.toLowerCase().includes(search.toLowerCase())).map(c => (
-                <tr key={c.id}><td>{new Date(c.fecha).toLocaleDateString('es-PY')}</td><td className="font-medium">{c.proveedor_nombre}</td><td>{c.factura || '-'}</td><td className="text-center">{c.items?.length || 0}</td><td className="text-right price-gs">{formatGs(c.total)}</td></tr>
+              {loading ? <tr><td colSpan={6} className="text-center py-8">Cargando...</td></tr>
+              : filteredCompras.length === 0 ? <tr><td colSpan={6} className="text-center py-8">Sin compras registradas</td></tr>
+              : filteredCompras.map(c => (
+                <tr key={c.id}>
+                  <td className="text-sm tabular-nums">{new Date(c.fecha).toLocaleDateString('es-PY')}</td>
+                  <td className="font-medium">{c.proveedor_nombre}</td>
+                  <td className="text-sm">{c.factura || '—'}</td>
+                  <td className="text-sm max-w-xs truncate">{itemsLabel(c.items)}</td>
+                  <td className="text-right price-gs tabular-nums">{formatGs(c.total)}</td>
+                  <td className="text-center">
+                    <div className="flex items-center justify-center gap-1">
+                      <button onClick={() => setShowDetalleModal(c)} className="p-1 hover:bg-blue-50 rounded text-blue-600" title="Ver detalle"><Eye size={16} /></button>
+                      {canEdit && <button onClick={() => openEdit(c)} className="p-1 hover:bg-yellow-50 rounded text-yellow-600" title="Editar"><Pencil size={16} /></button>}
+                      {canDelete && <button onClick={() => handleDelete(c.id)} className="p-1 hover:bg-red-50 rounded text-red-600" title="Eliminar"><Trash size={16} /></button>}
+                    </div>
+                  </td>
+                </tr>
               ))}
             </tbody>
           </table>
         </div>
       </div>
 
-      <Modal isOpen={showModal} onClose={() => setShowModal(false)} title="Nueva Compra" size="xl">
+      {/* Modal detalle */}
+      <Modal isOpen={!!showDetalleModal} onClose={() => setShowDetalleModal(null)} title="Detalle de Compra" size="xl">
+        {showDetalleModal && (
+          <div className="space-y-4">
+            <div className="grid grid-cols-3 gap-4 bg-muted/40 rounded-lg p-4 text-sm">
+              <div><p className="text-muted-foreground">Proveedor</p><p className="font-semibold">{showDetalleModal.proveedor_nombre}</p></div>
+              <div><p className="text-muted-foreground">Fecha</p><p className="font-semibold">{new Date(showDetalleModal.fecha).toLocaleDateString('es-PY')}</p></div>
+              <div><p className="text-muted-foreground">Factura</p><p className="font-semibold">{showDetalleModal.factura || '—'}</p></div>
+            </div>
+            <table className="data-table">
+              <thead><tr><th>Producto</th><th className="text-center">Cant.</th><th className="text-right">Costo Unit.</th><th className="text-right">Subtotal</th></tr></thead>
+              <tbody>
+                {showDetalleModal.items?.map((item, i) => (
+                  <tr key={i}>
+                    <td>{item.nombre}{item.variante ? <span className="text-sm ml-1"> | Variante: {item.variante}</span> : ''}</td>
+                    <td className="text-center tabular-nums">{item.cantidad}</td>
+                    <td className="text-right tabular-nums">{formatGs(item.precio_unitario)}</td>
+                    <td className="text-right tabular-nums font-medium">{formatGs(item.precio_unitario * item.cantidad)}</td>
+                  </tr>
+                ))}
+                <tr className="font-bold bg-muted">
+                  <td colSpan={3} className="text-right">TOTAL:</td>
+                  <td className="text-right text-lg tabular-nums">{formatGs(showDetalleModal.total)}</td>
+                </tr>
+              </tbody>
+            </table>
+            {showDetalleModal.observaciones && <p className="text-sm text-muted-foreground">Obs: {showDetalleModal.observaciones}</p>}
+          </div>
+        )}
+      </Modal>
+
+      {/* Modal crear/editar */}
+      <Modal isOpen={showModal} onClose={() => setShowModal(false)} title={editItem ? 'Editar Compra' : 'Nueva Compra'} size="xl">
         <div className="space-y-4">
-          <div className="grid grid-cols-3 gap-4">
-            <div className="form-group">
+          <div className="grid grid-cols-4 gap-4">
+            <div className="form-group col-span-2">
               <label className="form-label">Proveedor *</label>
               <select value={form.proveedor_id} onChange={(e) => selectProveedor(e.target.value)} className="form-input" data-testid="compra-proveedor">
                 <option value="">Seleccionar...</option>
                 {proveedores.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
               </select>
             </div>
-            <div className="form-group"><label className="form-label">Nro. Factura</label><input type="text" value={form.factura} onChange={(e) => setForm({...form, factura: e.target.value})} className="form-input" /></div>
-            <div className="form-group"><label className="form-label">Observaciones</label><input type="text" value={form.observaciones} onChange={(e) => setForm({...form, observaciones: e.target.value})} className="form-input" /></div>
-          </div>
-          <div className="border border-border rounded-lg p-4">
-            <h4 className="font-semibold text-sm mb-3">Agregar Productos</h4>
-            <div className="flex gap-2 items-end">
-              <div className="flex-1 form-group mb-0">
-                <select value={itemForm.producto_id} onChange={(e) => { const p = productos.find(pr => pr.id === e.target.value); setItemForm({...itemForm, producto_id: e.target.value, precio_unitario: p?.costo || 0}); }} className="form-input">
-                  <option value="">Seleccionar producto...</option>
-                  {productos.map(p => <option key={p.id} value={p.id}>{p.codigo} - {p.nombre}</option>)}
-                </select>
-              </div>
-              <div className="w-24 form-group mb-0"><input type="number" value={itemForm.cantidad} onChange={(e) => setItemForm({...itemForm, cantidad: parseInt(e.target.value) || 1})} className="form-input" min="1" placeholder="Cant." /></div>
-              <div className="w-32 form-group mb-0"><input type="number" value={itemForm.precio_unitario} onChange={(e) => setItemForm({...itemForm, precio_unitario: parseFloat(e.target.value) || 0})} className="form-input" placeholder="Precio" /></div>
-              <button onClick={addItem} className="px-3 py-2 bg-green-600 text-white rounded-md hover:bg-green-700"><Plus size={18} /></button>
+            <div className="form-group">
+              <label className="form-label">Fecha de compra</label>
+              <input type="date" value={form.fecha} onChange={(e) => setForm(f => ({...f, fecha: e.target.value}))} className="form-input" />
             </div>
+            <div className="form-group">
+              <label className="form-label">Nro. Factura</label>
+              <input type="text" value={form.factura} onChange={(e) => setForm(f => ({...f, factura: e.target.value}))} className="form-input" />
+            </div>
+          </div>
+
+          <div className="border border-border rounded-lg p-4 space-y-3">
+            <h4 className="font-semibold text-sm">Agregar Productos</h4>
+            <div className="flex gap-2 items-end">
+              <div className="flex-1 form-group mb-0 relative">
+                <input
+                  type="text"
+                  value={productoSearch}
+                  onChange={(e) => { setProductoSearch(e.target.value); setShowProductoSugg(true); setItemForm(f => ({...f, producto_id: ''})); }}
+                  onFocus={() => setShowProductoSugg(true)}
+                  onBlur={() => setTimeout(() => setShowProductoSugg(false), 150)}
+                  placeholder="Buscar por código, nombre o variante..."
+                  className="form-input"
+                />
+                {showProductoSugg && productosFiltrados.length > 0 && (
+                  <div className="absolute z-50 top-full left-0 right-0 bg-white border border-border rounded-md shadow-lg mt-1 max-h-48 overflow-y-auto">
+                    {productosFiltrados.map(p => (
+                      <button key={p.id} onMouseDown={() => selectProductoSugg(p)} className="w-full text-left px-3 py-2 hover:bg-muted text-sm">
+                        <span className="font-mono text-xs text-muted-foreground">{p.codigo}</span>
+                        <span className="mx-1">|</span>
+                        <span className="font-medium">{p.nombre}</span>
+                        {p.variante && <span className="text-muted-foreground ml-1">| Variante: {p.variante}</span>}
+                        <span className="float-right text-muted-foreground">{formatGs(p.costo)}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div className="w-24 form-group mb-0">
+                <input type="number" value={itemForm.cantidad} onChange={(e) => setItemForm(f => ({...f, cantidad: parseInt(e.target.value) || 1}))} className="form-input" min="1" placeholder="Cant." />
+              </div>
+              <div className="w-36 form-group mb-0">
+                <input type="number" value={itemForm.precio_unitario} onChange={(e) => setItemForm(f => ({...f, precio_unitario: parseFloat(e.target.value) || 0}))} className="form-input" placeholder="Costo unit." />
+              </div>
+              <button onClick={addItem} disabled={!itemForm.producto_id} className="px-3 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-40"><Plus size={18} /></button>
+            </div>
+
             {form.items.length > 0 && (
-              <table className="data-table mt-3">
-                <thead><tr><th>Producto</th><th className="text-center">Cant.</th><th className="text-right">Precio</th><th className="text-right">Subtotal</th><th></th></tr></thead>
+              <table className="data-table mt-2">
+                <thead><tr><th>Producto</th><th className="text-center w-20">Cant.</th><th className="text-right w-36">Costo Unit.</th><th className="text-right w-36">Subtotal</th><th className="w-8"></th></tr></thead>
                 <tbody>
                   {form.items.map((item, i) => (
-                    <tr key={i}><td>{item.nombre}</td><td className="text-center">{item.cantidad}</td><td className="text-right">{formatGs(item.precio_unitario)}</td><td className="text-right font-medium">{formatGs(item.precio_unitario * item.cantidad)}</td>
-                    <td className="text-center"><button onClick={() => removeItem(i)} className="text-red-500"><X size={16} /></button></td></tr>
+                    <tr key={i}>
+                      <td>
+                        <span className="font-medium">{item.nombre}</span>
+                        {item.variante && <span className="text-sm ml-1"> | Variante: {item.variante}</span>}
+                      </td>
+                      <td className="text-center">
+                        <input type="number" value={item.cantidad} min="1" onChange={(e) => updateItem(i, 'cantidad', parseInt(e.target.value) || 1)} className="form-input text-center w-16 py-1 text-sm" />
+                      </td>
+                      <td className="text-right">
+                        <input type="number" value={item.precio_unitario} onChange={(e) => updateItem(i, 'precio_unitario', parseFloat(e.target.value) || 0)} className="form-input text-right w-32 py-1 text-sm" />
+                      </td>
+                      <td className="text-right tabular-nums font-medium">{formatGs(item.precio_unitario * item.cantidad)}</td>
+                      <td className="text-center"><button onClick={() => removeItem(i)} className="text-red-500 hover:text-red-700"><X size={16} /></button></td>
+                    </tr>
                   ))}
-                  <tr className="font-semibold bg-muted"><td colSpan={3} className="text-right">TOTAL:</td><td className="text-right text-lg">{formatGs(total)}</td><td></td></tr>
+                  <tr className="font-bold bg-muted">
+                    <td colSpan={3} className="text-right">TOTAL:</td>
+                    <td className="text-right text-lg tabular-nums">{formatGs(total)}</td>
+                    <td></td>
+                  </tr>
                 </tbody>
               </table>
             )}
           </div>
+
+          <div className="form-group">
+            <label className="form-label">Observaciones</label>
+            <input type="text" value={form.observaciones} onChange={(e) => setForm(f => ({...f, observaciones: e.target.value}))} className="form-input" />
+          </div>
+
           <div className="flex justify-end gap-3">
             <button onClick={() => setShowModal(false)} className="px-4 py-2 border border-border rounded-md hover:bg-muted">Cancelar</button>
-            <button onClick={handleSave} disabled={!form.proveedor_id || form.items.length === 0} className="bg-[#E63946] text-white px-4 py-2 rounded-md hover:bg-[#D90429] disabled:opacity-50" data-testid="save-compra-btn">Registrar Compra</button>
+            <button onClick={handleSave} disabled={!form.proveedor_id || form.items.length === 0} className="bg-[#E63946] text-white px-4 py-2 rounded-md hover:bg-[#D90429] disabled:opacity-50" data-testid="save-compra-btn">
+              {editItem ? 'Guardar Cambios' : 'Registrar Compra'}
+            </button>
           </div>
         </div>
       </Modal>

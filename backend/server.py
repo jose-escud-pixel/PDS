@@ -241,6 +241,7 @@ class VentaItem(BaseModel):
 class VentaBase(BaseModel):
     cliente_id: str
     cliente_nombre: str
+    fecha: Optional[str] = None
     items: List[VentaItem]
     observaciones: Optional[str] = ""
 
@@ -256,6 +257,7 @@ class CompraBase(BaseModel):
     proveedor_id: str
     proveedor_nombre: str
     factura: Optional[str] = ""
+    fecha: Optional[str] = None
     items: List[CompraItem]
     observaciones: Optional[str] = ""
 
@@ -1077,7 +1079,7 @@ def create_venta(request: Request, venta: VentaBase):
         "total_iva": total_iva,
         "utilidad": total - total_costo,
         "observaciones": venta.observaciones,
-        "fecha": datetime.now(timezone.utc).isoformat(),
+        "fecha": venta.fecha or datetime.now(timezone.utc).isoformat(),
         "created_at": datetime.now(timezone.utc).isoformat(),
         "created_by": user["id"],
         "vendedor": user["email"]
@@ -1125,6 +1127,131 @@ def create_venta(request: Request, venta: VentaBase):
         "utilidad": total - total_costo
     }
 
+@app.put("/api/ventas/{venta_id}")
+def update_venta(request: Request, venta_id: str, venta: VentaBase):
+    user = get_current_user(request)
+    if not check_permission(user, "ventas", "editar"):
+        raise HTTPException(status_code=403, detail="Sin permiso para editar ventas")
+
+    existing = ventas_col.find_one({"_id": ObjectId(venta_id)})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Venta no encontrada")
+
+    # Revertir stock de items anteriores
+    for item in existing.get("items", []):
+        producto = productos_col.find_one({"_id": ObjectId(item["producto_id"])})
+        if producto:
+            stock_anterior = producto.get("stock", 0)
+            productos_col.update_one(
+                {"_id": ObjectId(item["producto_id"])},
+                {"$inc": {"stock": item["cantidad"]}}
+            )
+            registrar_movimiento_stock(
+                producto_id=item["producto_id"],
+                producto_nombre=item["nombre"],
+                tipo="entrada",
+                cantidad=item["cantidad"],
+                referencia_id=venta_id,
+                referencia_tipo="venta_reversion",
+                usuario_id=user["id"],
+                usuario_email=user["email"],
+                stock_anterior=stock_anterior
+            )
+
+    # Validar stock nuevo y calcular totales
+    total = 0
+    total_costo = 0
+    total_iva = 0
+    for item in venta.items:
+        producto = productos_col.find_one({"_id": ObjectId(item.producto_id)})
+        if not producto:
+            raise HTTPException(status_code=404, detail=f"Producto no encontrado: {item.nombre}")
+        if producto.get("stock", 0) < item.cantidad:
+            raise HTTPException(status_code=400, detail=f"Stock insuficiente para {item.nombre}. Disponible: {producto.get('stock', 0)}")
+        subtotal = item.cantidad * item.precio_unitario
+        iva = subtotal * item.iva_pct / (100 + item.iva_pct)
+        total += subtotal
+        total_costo += item.cantidad * item.costo_unitario
+        total_iva += iva
+
+    fecha = venta.fecha or existing.get("fecha", datetime.now(timezone.utc).isoformat())
+
+    ventas_col.update_one(
+        {"_id": ObjectId(venta_id)},
+        {"$set": {
+            "cliente_id": venta.cliente_id,
+            "cliente_nombre": venta.cliente_nombre,
+            "items": [item.model_dump() for item in venta.items],
+            "total": total,
+            "total_costo": total_costo,
+            "total_iva": total_iva,
+            "utilidad": total - total_costo,
+            "observaciones": venta.observaciones,
+            "fecha": fecha,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "updated_by": user["id"]
+        }}
+    )
+
+    # Descontar stock nuevo
+    for item in venta.items:
+        producto = productos_col.find_one({"_id": ObjectId(item.producto_id)})
+        stock_anterior = producto.get("stock", 0) if producto else 0
+        productos_col.update_one(
+            {"_id": ObjectId(item.producto_id)},
+            {"$inc": {"stock": -item.cantidad}}
+        )
+        registrar_movimiento_stock(
+            producto_id=item.producto_id,
+            producto_nombre=item.nombre,
+            tipo="salida",
+            cantidad=item.cantidad,
+            referencia_id=venta_id,
+            referencia_tipo="venta",
+            usuario_id=user["id"],
+            usuario_email=user["email"],
+            stock_anterior=stock_anterior
+        )
+
+    registrar_auditoria(user["id"], user["email"], "editar", "ventas",
+                        {"venta_id": venta_id, "total": total, "utilidad": total - total_costo})
+    return {"message": "Venta actualizada", "total": total, "utilidad": total - total_costo}
+
+@app.delete("/api/ventas/{venta_id}")
+def delete_venta(request: Request, venta_id: str):
+    user = get_current_user(request)
+    if not check_permission(user, "ventas", "eliminar"):
+        raise HTTPException(status_code=403, detail="Sin permiso para eliminar ventas")
+
+    existing = ventas_col.find_one({"_id": ObjectId(venta_id)})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Venta no encontrada")
+
+    # Reponer stock
+    for item in existing.get("items", []):
+        producto = productos_col.find_one({"_id": ObjectId(item["producto_id"])})
+        if producto:
+            stock_anterior = producto.get("stock", 0)
+            productos_col.update_one(
+                {"_id": ObjectId(item["producto_id"])},
+                {"$inc": {"stock": item["cantidad"]}}
+            )
+            registrar_movimiento_stock(
+                producto_id=item["producto_id"],
+                producto_nombre=item["nombre"],
+                tipo="entrada",
+                cantidad=item["cantidad"],
+                referencia_id=venta_id,
+                referencia_tipo="venta_eliminada",
+                usuario_id=user["id"],
+                usuario_email=user["email"],
+                stock_anterior=stock_anterior
+            )
+
+    ventas_col.delete_one({"_id": ObjectId(venta_id)})
+    registrar_auditoria(user["id"], user["email"], "eliminar", "ventas", {"venta_id": venta_id})
+    return {"message": "Venta eliminada y stock repuesto"}
+
 # ============ COMPRAS ============
 @app.get("/api/compras")
 def get_compras(
@@ -1167,7 +1294,7 @@ def create_compra(request: Request, compra: CompraBase):
         "total": total,
         "total_iva": total_iva,
         "observaciones": compra.observaciones,
-        "fecha": datetime.now(timezone.utc).isoformat(),
+        "fecha": compra.fecha or datetime.now(timezone.utc).isoformat(),
         "created_at": datetime.now(timezone.utc).isoformat(),
         "created_by": user["id"]
     }
@@ -1211,6 +1338,127 @@ def create_compra(request: Request, compra: CompraBase):
                         {"compra_id": str(result.inserted_id), "total": total, "proveedor": compra.proveedor_nombre})
     
     return {"id": str(result.inserted_id), "message": "Compra registrada", "total": total}
+
+@app.put("/api/compras/{compra_id}")
+def update_compra(request: Request, compra_id: str, compra: CompraBase):
+    user = get_current_user(request)
+    if not check_permission(user, "compras", "editar"):
+        raise HTTPException(status_code=403, detail="Sin permiso para editar compras")
+
+    existing = compras_col.find_one({"_id": ObjectId(compra_id)})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Compra no encontrada")
+
+    # Revertir stock de items anteriores
+    for item in existing.get("items", []):
+        producto = productos_col.find_one({"_id": ObjectId(item["producto_id"])})
+        if producto:
+            stock_anterior = producto.get("stock", 0)
+            productos_col.update_one(
+                {"_id": ObjectId(item["producto_id"])},
+                {"$inc": {"stock": -item["cantidad"]}}
+            )
+            registrar_movimiento_stock(
+                producto_id=item["producto_id"],
+                producto_nombre=item["nombre"],
+                tipo="salida",
+                cantidad=item["cantidad"],
+                referencia_id=compra_id,
+                referencia_tipo="compra_reversion",
+                usuario_id=user["id"],
+                usuario_email=user["email"],
+                stock_anterior=stock_anterior
+            )
+
+    # Calcular nuevo total
+    total = 0
+    total_iva = 0
+    for item in compra.items:
+        subtotal = item.cantidad * item.precio_unitario
+        iva = subtotal * item.iva_pct / (100 + item.iva_pct)
+        total += subtotal
+        total_iva += iva
+
+    # Usar fecha del request si viene, sino la original
+    fecha = getattr(compra, 'fecha', None) or existing.get("fecha", datetime.now(timezone.utc).isoformat())
+
+    compras_col.update_one(
+        {"_id": ObjectId(compra_id)},
+        {"$set": {
+            "proveedor_id": compra.proveedor_id,
+            "proveedor_nombre": compra.proveedor_nombre,
+            "factura": compra.factura,
+            "items": [item.model_dump() for item in compra.items],
+            "total": total,
+            "total_iva": total_iva,
+            "observaciones": compra.observaciones,
+            "fecha": fecha,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "updated_by": user["id"]
+        }}
+    )
+
+    # Aplicar stock nuevo
+    for item in compra.items:
+        producto = productos_col.find_one({"_id": ObjectId(item.producto_id)})
+        stock_anterior = producto.get("stock", 0) if producto else 0
+        productos_col.update_one(
+            {"_id": ObjectId(item.producto_id)},
+            {
+                "$inc": {"stock": item.cantidad},
+                "$set": {"costo": item.precio_unitario * (1 - item.iva_pct/(100+item.iva_pct))}
+            }
+        )
+        registrar_movimiento_stock(
+            producto_id=item.producto_id,
+            producto_nombre=item.nombre,
+            tipo="entrada",
+            cantidad=item.cantidad,
+            referencia_id=compra_id,
+            referencia_tipo="compra",
+            usuario_id=user["id"],
+            usuario_email=user["email"],
+            stock_anterior=stock_anterior
+        )
+
+    registrar_auditoria(user["id"], user["email"], "editar", "compras",
+                        {"compra_id": compra_id, "total": total})
+    return {"message": "Compra actualizada", "total": total}
+
+@app.delete("/api/compras/{compra_id}")
+def delete_compra(request: Request, compra_id: str):
+    user = get_current_user(request)
+    if not check_permission(user, "compras", "eliminar"):
+        raise HTTPException(status_code=403, detail="Sin permiso para eliminar compras")
+
+    existing = compras_col.find_one({"_id": ObjectId(compra_id)})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Compra no encontrada")
+
+    # Revertir stock
+    for item in existing.get("items", []):
+        producto = productos_col.find_one({"_id": ObjectId(item["producto_id"])})
+        if producto:
+            stock_anterior = producto.get("stock", 0)
+            productos_col.update_one(
+                {"_id": ObjectId(item["producto_id"])},
+                {"$inc": {"stock": -item["cantidad"]}}
+            )
+            registrar_movimiento_stock(
+                producto_id=item["producto_id"],
+                producto_nombre=item["nombre"],
+                tipo="salida",
+                cantidad=item["cantidad"],
+                referencia_id=compra_id,
+                referencia_tipo="compra_eliminada",
+                usuario_id=user["id"],
+                usuario_email=user["email"],
+                stock_anterior=stock_anterior
+            )
+
+    compras_col.delete_one({"_id": ObjectId(compra_id)})
+    registrar_auditoria(user["id"], user["email"], "eliminar", "compras", {"compra_id": compra_id})
+    return {"message": "Compra eliminada y stock revertido"}
 
 # ============ GASTOS ============
 @app.get("/api/gastos")
