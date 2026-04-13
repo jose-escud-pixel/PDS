@@ -593,7 +593,7 @@ def get_auditoria(
     fecha_desde: Optional[str] = None,
     fecha_hasta: Optional[str] = None,
     skip: int = 0,
-    limit: int = 100
+    limit: int = 1000
 ):
     user = require_admin(request)
     
@@ -622,7 +622,7 @@ def get_stock_movimientos(
     producto_id: Optional[str] = None,
     tipo: Optional[str] = None,
     skip: int = 0,
-    limit: int = 100
+    limit: int = 2000
 ):
     user = get_current_user(request)
     
@@ -679,11 +679,17 @@ def ajustar_stock(request: Request, producto_id: str, data: AjusteStock):
 
 # ============ DASHBOARD ============
 @app.get("/api/dashboard")
-def get_dashboard(request: Request):
+def get_dashboard(request: Request, fecha_desde: Optional[str] = None, fecha_hasta: Optional[str] = None):
     user = get_current_user(request)
-    
+
+    # Build date filter for ventas/compras/gastos
+    fecha_filter = {}
+    if fecha_desde: fecha_filter["$gte"] = fecha_desde
+    if fecha_hasta: fecha_filter["$lte"] = fecha_hasta + "T23:59:59"
+    date_match = {"fecha": fecha_filter} if fecha_filter else {}
+
     total_productos = productos_col.count_documents({"activo": True})
-    
+
     pipeline = [
         {"$match": {"activo": True}},
         {"$group": {
@@ -698,29 +704,36 @@ def get_dashboard(request: Request):
     stock_data = stock_stats[0] if stock_stats else {
         "valor_stock_costo": 0, "valor_stock_venta": 0, "productos_sin_stock": 0, "productos_bajo_minimo": 0
     }
-    
+
     ventas_pipeline = [
+        {"$match": date_match} if date_match else {"$match": {}},
         {"$group": {
             "_id": None,
             "total_ventas": {"$sum": "$total"},
             "total_costo": {"$sum": "$total_costo"},
+            "utilidad": {"$sum": "$utilidad"},
             "cantidad_ventas": {"$sum": 1}
         }}
     ]
     ventas_stats = list(ventas_col.aggregate(ventas_pipeline))
-    ventas_data = ventas_stats[0] if ventas_stats else {"total_ventas": 0, "total_costo": 0, "cantidad_ventas": 0}
-    
+    ventas_data = ventas_stats[0] if ventas_stats else {"total_ventas": 0, "total_costo": 0, "utilidad": 0, "cantidad_ventas": 0}
+
     compras_pipeline = [
+        {"$match": date_match} if date_match else {"$match": {}},
         {"$group": {"_id": None, "total_compras": {"$sum": "$total"}, "cantidad_compras": {"$sum": 1}}}
     ]
     compras_stats = list(compras_col.aggregate(compras_pipeline))
     compras_data = compras_stats[0] if compras_stats else {"total_compras": 0, "cantidad_compras": 0}
-    
-    gastos_pipeline = [{"$group": {"_id": None, "total_gastos": {"$sum": "$monto"}}}]
+
+    gastos_pipeline = [
+        {"$match": date_match} if date_match else {"$match": {}},
+        {"$group": {"_id": None, "total_gastos": {"$sum": "$monto"}}}
+    ]
     gastos_stats = list(gastos_col.aggregate(gastos_pipeline))
     gastos_data = gastos_stats[0] if gastos_stats else {"total_gastos": 0}
-    
+
     top_productos = list(ventas_col.aggregate([
+        {"$match": date_match} if date_match else {"$match": {}},
         {"$unwind": "$items"},
         {"$group": {
             "_id": "$items.producto_id",
@@ -731,8 +744,9 @@ def get_dashboard(request: Request):
         {"$sort": {"cantidad": -1}},
         {"$limit": 5}
     ]))
-    
+
     top_clientes = list(ventas_col.aggregate([
+        {"$match": date_match} if date_match else {"$match": {}},
         {"$group": {
             "_id": "$cliente_id",
             "nombre": {"$first": "$cliente_nombre"},
@@ -742,14 +756,15 @@ def get_dashboard(request: Request):
         {"$sort": {"total_compras": -1}},
         {"$limit": 5}
     ]))
-    
+
     bajo_stock = list(productos_col.find(
         {"$expr": {"$lt": ["$stock", "$stock_minimo"]}, "activo": True},
         {"_id": 0, "codigo": 1, "nombre": 1, "stock": 1, "stock_minimo": 1}
     ).limit(10))
-    
+
     utilidad_bruta = ventas_data.get("total_ventas", 0) - ventas_data.get("total_costo", 0)
-    
+    utilidad_neta = ventas_data.get("utilidad", utilidad_bruta) - gastos_data.get("total_gastos", 0)
+
     return {
         "resumen": {
             "total_productos": total_productos,
@@ -763,6 +778,7 @@ def get_dashboard(request: Request):
             "cantidad_compras": compras_data.get("cantidad_compras", 0),
             "total_gastos": gastos_data.get("total_gastos", 0),
             "utilidad_bruta": utilidad_bruta,
+            "utilidad_neta": utilidad_neta,
             "total_clientes": clientes_col.count_documents({"activo": True}),
             "total_proveedores": proveedores_col.count_documents({"activo": True})
         },
@@ -780,7 +796,7 @@ def get_productos(
     proveedor: Optional[str] = None,
     bajo_stock: Optional[bool] = False,
     skip: int = 0,
-    limit: int = 50
+    limit: int = 1000
 ):
     user = get_current_user(request)
     
@@ -1202,7 +1218,7 @@ def get_ventas(
     fecha_desde: Optional[str] = None,
     fecha_hasta: Optional[str] = None,
     skip: int = 0,
-    limit: int = 50
+    limit: int = 1000
 ):
     user = get_current_user(request)
     
@@ -1317,7 +1333,7 @@ def get_compras(
     request: Request,
     proveedor_id: Optional[str] = None,
     skip: int = 0,
-    limit: int = 50
+    limit: int = 1000
 ):
     user = get_current_user(request)
     
@@ -1400,7 +1416,7 @@ def create_compra(request: Request, compra: CompraBase):
 
 # ============ GASTOS ============
 @app.get("/api/gastos")
-def get_gastos(request: Request, skip: int = 0, limit: int = 50):
+def get_gastos(request: Request, skip: int = 0, limit: int = 1000):
     user = get_current_user(request)
     
     total = gastos_col.count_documents({})
@@ -2613,6 +2629,137 @@ def estadisticas_gastos_categoria(request: Request):
     
     gastos = list(gastos_col.aggregate(pipeline))
     return {"data": [{"categoria": g["_id"], "total": g["total"], "cantidad": g["cantidad"]} for g in gastos]}
+
+@app.get("/api/estadisticas/productos-mas-rentables")
+def estadisticas_productos_rentables(request: Request, fecha_desde: Optional[str] = None, fecha_hasta: Optional[str] = None, limite: int = 15):
+    user = get_current_user(request)
+
+    fecha_filter = {}
+    if fecha_desde: fecha_filter["$gte"] = fecha_desde
+    if fecha_hasta: fecha_filter["$lte"] = fecha_hasta + "T23:59:59"
+    venta_match = {"fecha": fecha_filter} if fecha_filter else {}
+
+    pipeline = []
+    if venta_match:
+        pipeline.append({"$match": venta_match})
+    pipeline.extend([
+        {"$unwind": "$items"},
+        {"$group": {
+            "_id": "$items.producto_id",
+            "nombre": {"$first": "$items.nombre"},
+            "cantidad_vendida": {"$sum": "$items.cantidad"},
+            "ingresos": {"$sum": {"$multiply": ["$items.cantidad", "$items.precio_unitario"]}},
+            "costo_total": {"$sum": {"$multiply": ["$items.cantidad", {"$ifNull": ["$items.costo_unitario", 0]}]}}
+        }},
+        {"$addFields": {
+            "utilidad": {"$subtract": ["$ingresos", "$costo_total"]},
+            "margen_pct": {
+                "$cond": [
+                    {"$gt": ["$ingresos", 0]},
+                    {"$multiply": [{"$divide": [{"$subtract": ["$ingresos", "$costo_total"]}, "$ingresos"]}, 100]},
+                    0
+                ]
+            }
+        }},
+        {"$sort": {"utilidad": -1}},
+        {"$limit": limite}
+    ])
+
+    productos = list(ventas_col.aggregate(pipeline))
+    return {"data": [
+        {
+            "producto_id": p["_id"],
+            "nombre": p["nombre"],
+            "cantidad_vendida": p["cantidad_vendida"],
+            "ingresos": round(p["ingresos"], 0),
+            "costo_total": round(p["costo_total"], 0),
+            "utilidad": round(p["utilidad"], 0),
+            "margen_pct": round(p["margen_pct"], 1)
+        }
+        for p in productos
+    ]}
+
+@app.get("/api/estadisticas/rotacion-stock")
+def estadisticas_rotacion_stock(request: Request, fecha_desde: Optional[str] = None, fecha_hasta: Optional[str] = None, limite: int = 20):
+    user = get_current_user(request)
+
+    fecha_filter = {}
+    if fecha_desde: fecha_filter["$gte"] = fecha_desde
+    if fecha_hasta: fecha_filter["$lte"] = fecha_hasta + "T23:59:59"
+    venta_match = {"fecha": fecha_filter} if fecha_filter else {}
+
+    pipeline = []
+    if venta_match:
+        pipeline.append({"$match": venta_match})
+    pipeline.extend([
+        {"$unwind": "$items"},
+        {"$group": {
+            "_id": "$items.producto_id",
+            "nombre": {"$first": "$items.nombre"},
+            "cantidad_vendida": {"$sum": "$items.cantidad"}
+        }}
+    ])
+
+    ventas_data = {v["_id"]: v for v in ventas_col.aggregate(pipeline)}
+
+    productos = list(productos_col.find({"activo": True}, {"_id": 0, "id": 1, "nombre": 1, "stock": 1, "costo": 1}))
+
+    result = []
+    for p in productos:
+        pid = p.get("id")
+        vendido = ventas_data.get(pid, {}).get("cantidad_vendida", 0)
+        stock_actual = p.get("stock", 0)
+        stock_promedio = max(stock_actual, 1)
+        rotacion = round(vendido / stock_promedio, 2) if stock_promedio > 0 else 0
+        result.append({
+            "producto_id": pid,
+            "nombre": p.get("nombre"),
+            "stock_actual": stock_actual,
+            "cantidad_vendida": vendido,
+            "rotacion": rotacion
+        })
+
+    result.sort(key=lambda x: x["rotacion"], reverse=True)
+    return {"data": result[:limite]}
+
+@app.get("/api/estadisticas/productos-sin-movimiento")
+def estadisticas_productos_sin_movimiento(request: Request, fecha_desde: Optional[str] = None, fecha_hasta: Optional[str] = None, limite: int = 50):
+    user = get_current_user(request)
+
+    fecha_filter = {}
+    if fecha_desde: fecha_filter["$gte"] = fecha_desde
+    if fecha_hasta: fecha_filter["$lte"] = fecha_hasta + "T23:59:59"
+    venta_match = {"fecha": fecha_filter} if fecha_filter else {}
+
+    pipeline = []
+    if venta_match:
+        pipeline.append({"$match": venta_match})
+    pipeline.extend([
+        {"$unwind": "$items"},
+        {"$group": {"_id": "$items.producto_id"}}
+    ])
+
+    ids_con_movimiento = {v["_id"] for v in ventas_col.aggregate(pipeline)}
+
+    todos = list(productos_col.find(
+        {"activo": True},
+        {"_id": 0, "id": 1, "codigo": 1, "nombre": 1, "variante": 1, "stock": 1, "costo": 1, "precio_con_iva": 1}
+    ))
+
+    sin_movimiento = [
+        {
+            "producto_id": p.get("id"),
+            "codigo": p.get("codigo"),
+            "nombre": p.get("nombre"),
+            "variante": p.get("variante", ""),
+            "stock": p.get("stock", 0),
+            "valor_stock": round((p.get("stock", 0)) * (p.get("costo", 0)), 0)
+        }
+        for p in todos if p.get("id") not in ids_con_movimiento
+    ]
+
+    sin_movimiento.sort(key=lambda x: x["valor_stock"], reverse=True)
+    return {"data": sin_movimiento[:limite], "total": len(sin_movimiento)}
 
 @app.get("/api/estadisticas/resumen-general")
 def estadisticas_resumen(request: Request, fecha_desde: Optional[str] = None, fecha_hasta: Optional[str] = None):

@@ -9,7 +9,7 @@ import {
   ChartPie, FilePdf, TrendUp, TrendDown, Target, Sliders, FloppyDisk,
   ArrowsOutCardinal, Layout, Rows, SquaresFour,
   ShareNetwork, Globe, LockSimple, UsersThree, Copy, BookmarkSimple,
-  Camera, CalendarBlank, Funnel, Archive
+  Camera, CalendarBlank, Funnel, Archive, LinkSimple
 } from '@phosphor-icons/react';
 import {
   AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell, LineChart, Line,
@@ -54,7 +54,7 @@ const api = {
   updateUsuario: (id, d) => axios.put(`${API_URL}/api/usuarios/${id}`, d),
   changePassword: (id, d) => axios.put(`${API_URL}/api/usuarios/${id}/password`, d),
   deleteUsuario: (id) => axios.delete(`${API_URL}/api/usuarios/${id}`),
-  getDashboard: () => axios.get(`${API_URL}/api/dashboard`),
+  getDashboard: (p) => axios.get(`${API_URL}/api/dashboard`, { params: p }),
   getDashboardTemplates: () => axios.get(`${API_URL}/api/dashboard/templates`),
   getDashboardConfig: () => axios.get(`${API_URL}/api/dashboard/config`),
   saveDashboardConfig: (d) => axios.post(`${API_URL}/api/dashboard/config`, d),
@@ -104,7 +104,7 @@ const api = {
   getComprasPorProveedor: (p) => axios.get(`${API_URL}/api/estadisticas/compras-por-proveedor`, { params: p }),
   getStockPorCategoria: () => axios.get(`${API_URL}/api/estadisticas/stock-por-categoria`),
   getGastosPorCategoria: () => axios.get(`${API_URL}/api/estadisticas/gastos-por-categoria`),
-  getResumenGeneral: () => axios.get(`${API_URL}/api/estadisticas/resumen-general`),
+  getResumenGeneral: (p) => axios.get(`${API_URL}/api/estadisticas/resumen-general`, { params: p }),
   seedData: () => axios.post(`${API_URL}/api/seed`),
   // Gastos - Additional
   updateGasto: (id, d) => axios.put(`${API_URL}/api/gastos/${id}`, d),
@@ -124,6 +124,7 @@ const api = {
   // Estadísticas adicionales
   getProductosMasRentables: (p) => axios.get(`${API_URL}/api/estadisticas/productos-mas-rentables`, { params: p }),
   getProductosSinMovimiento: (p) => axios.get(`${API_URL}/api/estadisticas/productos-sin-movimiento`, { params: p }),
+  getRotacionStock: (p) => axios.get(`${API_URL}/api/estadisticas/rotacion-stock`, { params: p }),
   getClientesTop: (p) => axios.get(`${API_URL}/api/estadisticas/clientes-top`, { params: p })
 };
 
@@ -651,13 +652,18 @@ function DashboardView({ user }) {
   const [usuariosLista, setUsuariosLista] = useState([]);
   const [saving, setSaving] = useState(false);
   const [plantillaForm, setPlantillaForm] = useState({ nombre: '', descripcion: '', compartir: 'privada', usuarios_compartidos: [] });
+  const [dashFechaDesde, setDashFechaDesde] = useState('');
+  const [dashFechaHasta, setDashFechaHasta] = useState('');
 
   const isAdmin = user?.role === 'admin';
 
   const loadData = useCallback(async () => {
     try {
+      const dashParams = {};
+      if (dashFechaDesde) dashParams.fecha_desde = dashFechaDesde;
+      if (dashFechaHasta) dashParams.fecha_hasta = dashFechaHasta;
       const [dashRes, templatesRes, configRes, ventasP, comprasP, prodVend, ventasC, stockCat, gastosCat, comprasProv, metasRes, plantillasRes] = await Promise.all([
-        api.getDashboard(),
+        api.getDashboard(dashParams),
         api.getDashboardTemplates(),
         api.getDashboardConfig(),
         api.getVentasPorPeriodo({ periodo: 'mes', limite: 12 }),
@@ -689,7 +695,7 @@ function DashboardView({ user }) {
       setCurrentTemplate(configRes.data.template || 'ejecutivo');
       setIsCustom(configRes.data.custom || false);
     } catch (e) { console.error(e); }
-  }, []);
+  }, [dashFechaDesde, dashFechaHasta]);
 
   useEffect(() => { loadData(); }, [loadData]);
 
@@ -805,7 +811,7 @@ function DashboardView({ user }) {
     switch (widgetId) {
       case 'stat-ventas': return <WidgetStatCard label="Total Ventas" value={formatGs(resumen?.total_ventas)} icon={ShoppingCart} color="success" subtext={`${resumen?.cantidad_ventas || 0} ventas`} />;
       case 'stat-compras': return <WidgetStatCard label="Total Compras" value={formatGs(resumen?.total_compras)} icon={Receipt} color="primary" subtext={`${resumen?.cantidad_compras || 0} compras`} />;
-      case 'stat-utilidad': return <WidgetStatCard label="Utilidad Bruta" value={formatGs(resumen?.utilidad_bruta)} icon={TrendUp} color="success" />;
+      case 'stat-utilidad': return <WidgetStatCard label="Utilidad Bruta" value={formatGs(resumen?.utilidad_bruta)} icon={TrendUp} color="success" subtext={resumen?.utilidad_neta !== undefined ? `Neta: ${formatGs(resumen.utilidad_neta)}` : undefined} />;
       case 'stat-gastos': return <WidgetStatCard label="Total Gastos" value={formatGs(resumen?.total_gastos)} icon={Money} color="warning" />;
       case 'stat-productos': return <WidgetStatCard label="Productos" value={resumen?.total_productos} icon={Package} color="blue" />;
       case 'stat-stock-valor': return <WidgetStatCard label="Valor Stock" value={formatGs(resumen?.valor_stock_venta)} icon={Package} color="blue" />;
@@ -881,6 +887,22 @@ function DashboardView({ user }) {
           )}
         </div>
       </div>
+
+      {/* Date filter */}
+      {!editMode && (
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-2 bg-white border border-border rounded-lg px-3 py-1.5">
+            <CalendarBlank size={16} className="text-muted-foreground" />
+            <input type="date" value={dashFechaDesde} onChange={(e) => setDashFechaDesde(e.target.value)} className="text-sm border-0 focus:ring-0 p-0 w-32 bg-transparent" placeholder="Desde" />
+            <span className="text-muted-foreground text-sm">-</span>
+            <input type="date" value={dashFechaHasta} onChange={(e) => setDashFechaHasta(e.target.value)} className="text-sm border-0 focus:ring-0 p-0 w-32 bg-transparent" placeholder="Hasta" />
+            {(dashFechaDesde || dashFechaHasta) && (
+              <button onClick={() => { setDashFechaDesde(''); setDashFechaHasta(''); }} className="text-red-500 hover:text-red-700"><X size={14} /></button>
+            )}
+          </div>
+          {(dashFechaDesde || dashFechaHasta) && <span className="text-xs text-muted-foreground">Filtrando ventas/compras/gastos por fecha</span>}
+        </div>
+      )}
 
       {editMode && (
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-800">
@@ -1135,6 +1157,9 @@ function EstadisticasView() {
   const [selectedProducto, setSelectedProducto] = useState(null);
   const [productoStats, setProductoStats] = useState(null);
   const [ingresos, setIngresos] = useState([]);
+  const [productosRentables, setProductosRentables] = useState([]);
+  const [productosSinMovimiento, setProductosSinMovimiento] = useState([]);
+  const [rotacionStock, setRotacionStock] = useState([]);
 
   const loadData = useCallback(() => {
     setLoading(true);
@@ -1151,8 +1176,11 @@ function EstadisticasView() {
       api.getStockPorCategoria(),
       api.getGastosPorCategoria(),
       api.getResumenGeneral(fd),
-      api.getIngresosPorPeriodo(fp)
-    ]).then(([vp, cp, pmv, vc, sc, gc, res, ing]) => {
+      api.getIngresosPorPeriodo(fp),
+      api.getProductosMasRentables({ limite: 15, ...fd }),
+      api.getProductosSinMovimiento({ limite: 30, ...fd }),
+      api.getRotacionStock({ limite: 20, ...fd })
+    ]).then(([vp, cp, pmv, vc, sc, gc, res, ing, rent, sinMov, rot]) => {
       setData({
         ventasPeriodo: vp.data.data || [],
         comprasPeriodo: cp.data.data || [],
@@ -1163,13 +1191,16 @@ function EstadisticasView() {
         resumen: res.data
       });
       setIngresos(ing.data.data || []);
+      setProductosRentables(rent.data.data || []);
+      setProductosSinMovimiento(sinMov.data.data || []);
+      setRotacionStock(rot.data.data || []);
     }).finally(() => setLoading(false));
   }, [periodo, fechaDesde, fechaHasta]);
 
   useEffect(() => { loadData(); }, [loadData]);
 
   const openProductoDetail = async () => {
-    if (productos.length === 0) { const r = await api.getProductos({}); setProductos(r.data.productos || []); }
+    if (productos.length === 0) { const r = await api.getProductos({ limit: 1000 }); setProductos(r.data.productos || []); }
     setShowProductoModal(true);
   };
 
@@ -1264,6 +1295,80 @@ function EstadisticasView() {
         </div>
       </div>
 
+      {/* Rotación de stock */}
+      {rotacionStock.length > 0 && (
+        <div className="bg-white border border-border rounded-lg p-6">
+          <h3 className="font-semibold mb-1">Rotación de Stock</h3>
+          <p className="text-xs text-muted-foreground mb-4">Índice = unidades vendidas ÷ stock actual. Mayor índice = mayor rotación.</p>
+          <div className="overflow-x-auto max-h-72">
+            <table className="data-table">
+              <thead className="sticky top-0 bg-white"><tr><th>Producto</th><th className="text-right">Stock Actual</th><th className="text-right">Unid. Vendidas</th><th className="text-right">Índice Rotación</th></tr></thead>
+              <tbody>
+                {rotacionStock.map((p, i) => (
+                  <tr key={p.producto_id || i}>
+                    <td>{p.nombre}</td>
+                    <td className="text-right">{p.stock_actual}</td>
+                    <td className="text-right">{p.cantidad_vendida}</td>
+                    <td className="text-right">
+                      <span className={`badge ${p.rotacion >= 3 ? 'badge-success' : p.rotacion >= 1 ? 'bg-yellow-100 text-yellow-800' : 'badge-warning'}`}>
+                        {p.rotacion}x
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Productos más rentables */}
+      {productosRentables.length > 0 && (
+        <div className="bg-white border border-border rounded-lg p-6">
+          <h3 className="font-semibold mb-4">Productos más Rentables</h3>
+          <div className="overflow-x-auto">
+            <table className="data-table">
+              <thead><tr><th>Producto</th><th className="text-right">Cant. Vendida</th><th className="text-right">Ingresos</th><th className="text-right">Utilidad</th><th className="text-right">Margen %</th></tr></thead>
+              <tbody>
+                {productosRentables.map((p, i) => (
+                  <tr key={p.producto_id || i}>
+                    <td className="font-medium">{p.nombre}</td>
+                    <td className="text-right">{p.cantidad_vendida}</td>
+                    <td className="text-right text-sm">{formatGs(p.ingresos)}</td>
+                    <td className="text-right font-semibold text-green-600">{formatGs(p.utilidad)}</td>
+                    <td className="text-right"><span className={`badge ${p.margen_pct >= 20 ? 'badge-success' : p.margen_pct >= 10 ? 'bg-yellow-100 text-yellow-800' : 'badge-warning'}`}>{p.margen_pct}%</span></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Productos sin movimiento */}
+      {productosSinMovimiento.length > 0 && (
+        <div className="bg-white border border-border rounded-lg p-6">
+          <h3 className="font-semibold mb-1">Productos sin Movimiento <span className="text-sm font-normal text-muted-foreground">({productosSinMovimiento.length})</span></h3>
+          <p className="text-xs text-muted-foreground mb-4">Productos activos sin ventas en el período seleccionado</p>
+          <div className="overflow-x-auto max-h-72">
+            <table className="data-table">
+              <thead className="sticky top-0 bg-white"><tr><th>Código</th><th>Producto</th><th>Variante</th><th className="text-right">Stock</th><th className="text-right">Valor Stock</th></tr></thead>
+              <tbody>
+                {productosSinMovimiento.map((p, i) => (
+                  <tr key={p.producto_id || i}>
+                    <td className="font-mono text-sm">{p.codigo}</td>
+                    <td>{p.nombre}</td>
+                    <td className="text-sm text-muted-foreground">{p.variante || '-'}</td>
+                    <td className="text-right"><span className={p.stock <= 0 ? 'text-red-600 font-semibold' : ''}>{p.stock}</span></td>
+                    <td className="text-right text-sm">{formatGs(p.valor_stock)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
       {/* Análisis por Producto Modal */}
       <Modal isOpen={showProductoModal} onClose={() => { setShowProductoModal(false); setProductoStats(null); setSelectedProducto(null); }} title="Análisis por Producto" size="xl">
         <div className="space-y-4">
@@ -1319,7 +1424,7 @@ function ProductosView({ user }) {
   const [showAjusteModal, setShowAjusteModal] = useState(null);
   const [editItem, setEditItem] = useState(null);
   const [categorias, setCategorias] = useState([]);
-  const [form, setForm] = useState({ codigo: '', nombre: '', variante: '', categoria: '', proveedor: '', precio_con_iva: 0, costo: 0, stock: 0, stock_minimo: 2, iva_pct: 10, margen: 15 });
+  const [form, setForm] = useState({ codigo: '', nombre: '', variante: '', categoria: '', proveedor: '', precio_con_iva: 0, costo: 0, stock: 0, stock_minimo: 2, iva_pct: 10, margen: 20 });
   const [ajusteForm, setAjusteForm] = useState({ cantidad: 0, motivo: '' });
   const isAdmin = user?.role === 'admin';
   const canCreate = hasPermission(user, 'productos', 'crear');
@@ -1329,7 +1434,7 @@ function ProductosView({ user }) {
   const loadData = useCallback(() => {
     setLoading(true);
     Promise.all([
-      api.getProductos(search ? { search } : {}),
+      api.getProductos(search ? { search, limit: 1000 } : { limit: 1000 }),
       api.getCategorias()
     ]).then(([p, c]) => {
       setProductos(p.data.productos || []);
@@ -1339,13 +1444,16 @@ function ProductosView({ user }) {
 
   useEffect(() => { loadData(); }, [loadData]);
 
-  const openNew = () => { setEditItem(null); setForm({ codigo: '', nombre: '', variante: '', categoria: categorias[0] || '', proveedor: '', precio_con_iva: 0, costo: 0, stock: 0, stock_minimo: 2, iva_pct: 10, margen: 15 }); setShowModal(true); };
+  const openNew = () => { setEditItem(null); setForm({ codigo: '', nombre: '', variante: '', categoria: categorias[0] || '', proveedor: '', precio_con_iva: 0, costo: 0, stock: 0, stock_minimo: 2, iva_pct: 10, margen: 20 }); setShowModal(true); };
   const openEdit = (p) => { setEditItem(p); setForm({ codigo: p.codigo, nombre: p.nombre, variante: p.variante || '', categoria: p.categoria, proveedor: p.proveedor || '', precio_con_iva: p.precio_con_iva, costo: p.costo, stock: p.stock, stock_minimo: p.stock_minimo, iva_pct: p.iva_pct || 10, margen: p.margen || 15 }); setShowModal(true); };
+
+  const precioSugerido = form.costo > 0 ? Math.round(form.costo * (1 + (form.margen || 0) / 100)) : 0;
 
   const handleSave = async () => {
     try {
-      if (editItem) { await api.updateProducto(editItem.id, form); }
-      else { await api.createProducto(form); }
+      const payload = { ...form, precio_con_iva: precioSugerido };
+      if (editItem) { await api.updateProducto(editItem.id, payload); }
+      else { await api.createProducto(payload); }
       setShowModal(false); loadData();
     } catch (e) { alert(formatApiError(e.response?.data?.detail)); }
   };
@@ -1408,7 +1516,8 @@ function ProductosView({ user }) {
           <div className="form-group"><label className="form-label">Proveedor</label><input type="text" value={form.proveedor} onChange={(e) => setForm({...form, proveedor: e.target.value})} className="form-input" /></div>
           <div className="form-group"><label className="form-label">IVA %</label><input type="number" value={form.iva_pct} onChange={(e) => setForm({...form, iva_pct: parseInt(e.target.value) || 0})} className="form-input" /></div>
           <div className="form-group"><label className="form-label">Costo con IVA</label><input type="number" value={form.costo} onChange={(e) => setForm({...form, costo: parseFloat(e.target.value) || 0})} className="form-input" /></div>
-          <div className="form-group"><label className="form-label">Precio con IVA</label><input type="number" value={form.precio_con_iva} onChange={(e) => setForm({...form, precio_con_iva: parseFloat(e.target.value) || 0})} className="form-input" /></div>
+          <div className="form-group"><label className="form-label">% Utilidad esperada</label><input type="number" value={form.margen} onChange={(e) => setForm({...form, margen: parseFloat(e.target.value) || 0})} className="form-input" min="0" /></div>
+          <div className="form-group col-span-2"><label className="form-label">Precio de venta sugerido</label><div className="form-input bg-muted cursor-default text-lg font-semibold text-green-700">{formatGs(precioSugerido)}</div></div>
           <div className="form-group"><label className="form-label">Stock</label><input type="number" value={form.stock} onChange={(e) => setForm({...form, stock: parseInt(e.target.value) || 0})} className="form-input" /></div>
           <div className="form-group"><label className="form-label">Stock Mínimo</label><input type="number" value={form.stock_minimo} onChange={(e) => setForm({...form, stock_minimo: parseInt(e.target.value) || 0})} className="form-input" /></div>
         </div>
@@ -1457,13 +1566,13 @@ function VentasView({ user }) {
 
   const loadData = useCallback(() => {
     setLoading(true);
-    api.getVentas({}).then(r => setVentas(r.data.ventas || [])).finally(() => setLoading(false));
+    api.getVentas({ limit: 1000 }).then(r => setVentas(r.data.ventas || [])).finally(() => setLoading(false));
   }, []);
 
   useEffect(() => { loadData(); }, [loadData]);
 
   const openNew = async () => {
-    const [cRes, pRes] = await Promise.all([api.getClientes({}), api.getProductos({})]);
+    const [cRes, pRes] = await Promise.all([api.getClientes({}), api.getProductos({ limit: 1000 })]);
     setClientes(cRes.data.clientes || []);
     setProductos(pRes.data.productos || []);
     setEditItem(null);
@@ -1473,7 +1582,7 @@ function VentasView({ user }) {
   };
 
   const openEdit = async (v) => {
-    const [cRes, pRes] = await Promise.all([api.getClientes({}), api.getProductos({})]);
+    const [cRes, pRes] = await Promise.all([api.getClientes({}), api.getProductos({ limit: 1000 })]);
     setClientes(cRes.data.clientes || []);
     setProductos(pRes.data.productos || []);
     setEditItem(v);
@@ -1786,13 +1895,13 @@ function ComprasView({ user }) {
 
   const loadData = useCallback(() => {
     setLoading(true);
-    api.getCompras({}).then(r => setCompras(r.data.compras || [])).finally(() => setLoading(false));
+    api.getCompras({ limit: 1000 }).then(r => setCompras(r.data.compras || [])).finally(() => setLoading(false));
   }, []);
 
   useEffect(() => { loadData(); }, [loadData]);
 
   const openNew = async () => {
-    const [pRes, prodRes] = await Promise.all([api.getProveedores({}), api.getProductos({})]);
+    const [pRes, prodRes] = await Promise.all([api.getProveedores({}), api.getProductos({ limit: 1000 })]);
     setProveedores(pRes.data.proveedores || []);
     setProductos(prodRes.data.productos || []);
     setEditItem(null);
@@ -1802,7 +1911,7 @@ function ComprasView({ user }) {
   };
 
   const openEdit = async (c) => {
-    const [pRes, prodRes] = await Promise.all([api.getProveedores({}), api.getProductos({})]);
+    const [pRes, prodRes] = await Promise.all([api.getProveedores({}), api.getProductos({ limit: 1000 })]);
     setProveedores(pRes.data.proveedores || []);
     setProductos(prodRes.data.productos || []);
     setEditItem(c);
@@ -2775,7 +2884,7 @@ function GastosView({ user }) {
   const [categorias] = useState(['Transporte', 'Marketing', 'Servicios', 'Operativos', 'Alquiler', 'Sueldos', 'Impuestos', 'Varios']);
   const [form, setForm] = useState({
     fecha: new Date().toISOString().split('T')[0], categoria: '', descripcion: '',
-    proveedor_id: '', proveedor_nombre: '', monto: 0, observaciones: ''
+    proveedor_id: '', proveedor_nombre: '', monto: 0, observaciones: '', comprobante_url: ''
   });
   const isAdmin = user?.role === 'admin';
   const canEdit = hasPermission(user, 'gastos', 'editar') || isAdmin;
@@ -2783,7 +2892,7 @@ function GastosView({ user }) {
 
   const loadData = useCallback(() => {
     setLoading(true);
-    api.getGastos({}).then(r => setGastos(r.data.gastos || [])).finally(() => setLoading(false));
+    api.getGastos({ limit: 1000 }).then(r => setGastos(r.data.gastos || [])).finally(() => setLoading(false));
   }, []);
 
   useEffect(() => {
@@ -2793,7 +2902,7 @@ function GastosView({ user }) {
 
   const openNew = () => {
     setEditItem(null);
-    setForm({ fecha: new Date().toISOString().split('T')[0], categoria: '', descripcion: '', proveedor_id: '', proveedor_nombre: '', monto: 0, observaciones: '' });
+    setForm({ fecha: new Date().toISOString().split('T')[0], categoria: '', descripcion: '', proveedor_id: '', proveedor_nombre: '', monto: 0, observaciones: '', comprobante_url: '' });
     setShowModal(true);
   };
 
@@ -2803,7 +2912,7 @@ function GastosView({ user }) {
       fecha: g.fecha ? g.fecha.split('T')[0] : new Date().toISOString().split('T')[0],
       categoria: g.categoria || '', descripcion: g.descripcion || '',
       proveedor_id: g.proveedor_id || '', proveedor_nombre: g.proveedor_nombre || g.proveedor || '',
-      monto: g.monto || 0, observaciones: g.observaciones || ''
+      monto: g.monto || 0, observaciones: g.observaciones || '', comprobante_url: g.comprobante_url || ''
     });
     setShowModal(true);
   };
@@ -2866,11 +2975,11 @@ function GastosView({ user }) {
         <div className="overflow-x-auto max-h-[600px]">
           <table className="data-table">
             <thead className="sticky top-0 bg-white">
-              <tr><th>Fecha</th><th>Categoría</th><th>Descripción</th><th>Proveedor</th><th className="text-right">Monto</th><th className="text-center">Acciones</th></tr>
+              <tr><th>Fecha</th><th>Categoría</th><th>Descripción</th><th>Proveedor</th><th className="text-right">Monto</th><th className="text-center">Comp.</th><th className="text-center">Acciones</th></tr>
             </thead>
             <tbody>
-              {loading ? <tr><td colSpan={6} className="text-center py-8">Cargando...</td></tr>
-              : filteredGastos.length === 0 ? <tr><td colSpan={6} className="text-center py-8">Sin gastos registrados</td></tr>
+              {loading ? <tr><td colSpan={7} className="text-center py-8">Cargando...</td></tr>
+              : filteredGastos.length === 0 ? <tr><td colSpan={7} className="text-center py-8">Sin gastos registrados</td></tr>
               : filteredGastos.map(g => (
                 <tr key={g.id}>
                   <td className="whitespace-nowrap">{new Date(g.fecha).toLocaleDateString('es-PY')}</td>
@@ -2878,6 +2987,7 @@ function GastosView({ user }) {
                   <td>{g.descripcion}</td>
                   <td className="text-sm">{g.proveedor_nombre || g.proveedor || '-'}</td>
                   <td className="text-right font-mono">{formatGs(g.monto)}</td>
+                  <td className="text-center">{g.comprobante_url ? <a href={g.comprobante_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-800" title="Ver comprobante"><LinkSimple size={16} /></a> : <span className="text-muted-foreground">-</span>}</td>
                   <td className="text-center">
                     <div className="flex items-center justify-center gap-1">
                       <button onClick={() => { setSelectedGasto(g); setShowDetailModal(true); }} className="p-1 hover:bg-blue-50 rounded text-blue-600" title="Ver"><Eye size={16} /></button>
@@ -2903,6 +3013,12 @@ function GastosView({ user }) {
               {(selectedGasto.proveedor_nombre || selectedGasto.proveedor) && <div><span className="text-muted-foreground">Proveedor:</span> <span className="font-medium">{selectedGasto.proveedor_nombre || selectedGasto.proveedor}</span></div>}
               <div><span className="text-muted-foreground">Monto:</span> <span className="font-semibold text-lg">{formatGs(selectedGasto.monto)}</span></div>
               {selectedGasto.observaciones && <div className="col-span-2"><span className="text-muted-foreground">Obs:</span> {selectedGasto.observaciones}</div>}
+              {selectedGasto.comprobante_url && (
+                <div className="col-span-2">
+                  <span className="text-muted-foreground">Comprobante:</span>{' '}
+                  <a href={selectedGasto.comprobante_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline break-all">{selectedGasto.comprobante_url}</a>
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -2947,6 +3063,10 @@ function GastosView({ user }) {
           <div className="form-group">
             <label className="form-label">Observaciones</label>
             <textarea value={form.observaciones} onChange={(e) => setForm({ ...form, observaciones: e.target.value })} className="form-input h-20 resize-none" />
+          </div>
+          <div className="form-group">
+            <label className="form-label">URL Comprobante (opcional)</label>
+            <input type="url" value={form.comprobante_url} onChange={(e) => setForm({ ...form, comprobante_url: e.target.value })} className="form-input" placeholder="https://..." />
           </div>
           <div className="flex justify-end gap-3">
             <button onClick={() => setShowModal(false)} className="px-4 py-2 border border-border rounded-md hover:bg-muted">Cancelar</button>
@@ -3258,6 +3378,7 @@ function StockHistorialView() {
                 <th>Producto</th>
                 <th>Tipo</th>
                 <th>Origen</th>
+                <th>Referencia</th>
                 <th className="text-right">Cant.</th>
                 <th className="text-right">Anterior</th>
                 <th className="text-right">Nuevo</th>
@@ -3266,8 +3387,8 @@ function StockHistorialView() {
               </tr>
             </thead>
             <tbody>
-              {loading ? <tr><td colSpan={9} className="text-center py-8">Cargando...</td></tr>
-              : filtered.length === 0 ? <tr><td colSpan={9} className="text-center py-8">Sin movimientos</td></tr>
+              {loading ? <tr><td colSpan={10} className="text-center py-8">Cargando...</td></tr>
+              : filtered.length === 0 ? <tr><td colSpan={10} className="text-center py-8">Sin movimientos</td></tr>
               : filtered.map(m => (
                 <tr key={m.id}>
                   <td className="whitespace-nowrap text-sm">{new Date(m.fecha).toLocaleString('es-PY', { dateStyle: 'short', timeStyle: 'short' })}</td>
@@ -3277,6 +3398,7 @@ function StockHistorialView() {
                   </td>
                   <td><span className={`badge ${TIPO_BADGE[m.tipo] || 'badge-warning'}`}>{m.tipo}</span></td>
                   <td className="text-sm">{ORIGEN_MAP[m.referencia_tipo] || m.referencia_tipo || '-'}</td>
+                  <td className="text-sm font-mono text-muted-foreground">{m.referencia_id ? m.referencia_id.slice(0, 8) + '…' : '-'}</td>
                   <td className={`text-right font-mono font-medium ${m.tipo === 'entrada' ? 'text-green-600' : 'text-red-600'}`}>
                     {m.tipo === 'entrada' ? '+' : '-'}{m.cantidad}
                   </td>
