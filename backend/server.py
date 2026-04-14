@@ -1369,7 +1369,7 @@ def create_compra(request: Request, compra: CompraBase):
         "total": total,
         "total_iva": total_iva,
         "observaciones": compra.observaciones,
-        "fecha": venta.fecha if venta.fecha else datetime.now(timezone.utc).isoformat(),
+        "fecha": compra.fecha if compra.fecha else datetime.now(timezone.utc).isoformat(),
         "created_at": datetime.now(timezone.utc).isoformat(),
         "created_by": user["id"]
     }
