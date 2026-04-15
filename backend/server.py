@@ -58,6 +58,7 @@ login_attempts_col = db["login_attempts"]
 dashboard_config_col = db["dashboard_config"]
 metas_col = db["metas"]
 plantillas_col = db["plantillas"]
+leads_col = db["leads"]
 
 # ============ PASSWORD & JWT ============
 def hash_password(password: str) -> str:
@@ -225,6 +226,8 @@ class ClienteBase(BaseModel):
     ciudad: Optional[str] = ""
     tipo: str = "Odontólogo"
     activo: bool = True
+    ultimo_contacto: Optional[str] = None
+    observaciones: Optional[str] = None
 
 class ProveedorBase(BaseModel):
     nombre: str
@@ -300,6 +303,22 @@ class GastoUpdate(BaseModel):
     proveedor_id: Optional[str] = None
     proveedor_nombre: Optional[str] = None
     monto: Optional[float] = None
+    observaciones: Optional[str] = None
+
+class LeadBase(BaseModel):
+    nombre: str
+    telefono: str
+    fecha_primer_contacto: str
+    canal_origen: Optional[str] = ""
+    fecha_ultimo_contacto: Optional[str] = None
+    observaciones: Optional[str] = None
+
+class LeadUpdate(BaseModel):
+    nombre: Optional[str] = None
+    telefono: Optional[str] = None
+    fecha_primer_contacto: Optional[str] = None
+    canal_origen: Optional[str] = None
+    fecha_ultimo_contacto: Optional[str] = None
     observaciones: Optional[str] = None
 
 def serialize_doc(doc):
@@ -1078,6 +1097,78 @@ def delete_cliente(request: Request, cliente_id: str):
     registrar_auditoria(user["id"], user["email"], "eliminar", "clientes", {"cliente_id": cliente_id})
     
     return {"message": "Cliente eliminado"}
+
+# ============ LEADS ============
+@app.get("/api/leads")
+def get_leads(
+    request: Request,
+    search: Optional[str] = None,
+    canal: Optional[str] = None,
+    fecha_desde: Optional[str] = None,
+    fecha_hasta: Optional[str] = None,
+    sort_by: Optional[str] = "fecha_primer_contacto",
+    sort_dir: Optional[str] = "desc",
+):
+    user = get_current_user(request)
+    query = {}
+    if search:
+        query["$or"] = [
+            {"nombre":   {"$regex": search, "$options": "i"}},
+            {"telefono": {"$regex": search, "$options": "i"}},
+        ]
+    if canal:
+        query["canal_origen"] = {"$regex": canal, "$options": "i"}
+    if fecha_desde or fecha_hasta:
+        date_filter = {}
+        if fecha_desde:
+            date_filter["$gte"] = fecha_desde
+        if fecha_hasta:
+            date_filter["$lte"] = fecha_hasta + "T23:59:59"
+        query["fecha_primer_contacto"] = date_filter
+
+    sort_field = sort_by if sort_by in ("fecha_primer_contacto", "fecha_ultimo_contacto", "nombre") else "fecha_primer_contacto"
+    sort_direction = -1 if sort_dir == "desc" else 1
+    leads = list(leads_col.find(query).sort(sort_field, sort_direction))
+    return {"leads": serialize_docs(leads)}
+
+@app.post("/api/leads")
+def create_lead(request: Request, lead: LeadBase):
+    user = get_current_user(request)
+    data = lead.model_dump()
+    data["created_at"] = datetime.now(timezone.utc).isoformat()
+    data["created_by"] = user["id"]
+    result = leads_col.insert_one(data)
+    registrar_auditoria(user["id"], user["email"], "crear", "leads", {"lead_id": str(result.inserted_id), "nombre": lead.nombre})
+    return {"id": str(result.inserted_id), "message": "Lead creado"}
+
+@app.put("/api/leads/{lead_id}")
+def update_lead(request: Request, lead_id: str, lead: LeadUpdate):
+    user = get_current_user(request)
+    try:
+        oid = ObjectId(lead_id)
+    except:
+        raise HTTPException(status_code=400, detail="ID inválido")
+    update_data = {k: v for k, v in lead.model_dump().items() if v is not None}
+    update_data["updated_at"] = datetime.now(timezone.utc).isoformat()
+    result = leads_col.update_one({"_id": oid}, {"$set": update_data})
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Lead no encontrado")
+    registrar_auditoria(user["id"], user["email"], "actualizar", "leads", {"lead_id": lead_id})
+    return {"message": "Lead actualizado"}
+
+@app.delete("/api/leads/{lead_id}")
+def delete_lead(request: Request, lead_id: str):
+    user = get_current_user(request)
+    try:
+        oid = ObjectId(lead_id)
+    except:
+        raise HTTPException(status_code=400, detail="ID inválido")
+    result = leads_col.delete_one({"_id": oid})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Lead no encontrado")
+    registrar_auditoria(user["id"], user["email"], "eliminar", "leads", {"lead_id": lead_id})
+    return {"message": "Lead eliminado"}
+
 
 # ============ PROVEEDORES ============
 @app.get("/api/proveedores")

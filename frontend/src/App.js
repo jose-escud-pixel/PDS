@@ -84,6 +84,10 @@ const api = {
   createCliente: (d) => axios.post(`${API_URL}/api/clientes`, d),
   updateCliente: (id, d) => axios.put(`${API_URL}/api/clientes/${id}`, d),
   deleteCliente: (id) => axios.delete(`${API_URL}/api/clientes/${id}`),
+  getLeads: (p) => axios.get(`${API_URL}/api/leads`, { params: p }),
+  createLead: (d) => axios.post(`${API_URL}/api/leads`, d),
+  updateLead: (id, d) => axios.put(`${API_URL}/api/leads/${id}`, d),
+  deleteLead: (id) => axios.delete(`${API_URL}/api/leads/${id}`),
   getProveedores: (p) => axios.get(`${API_URL}/api/proveedores`, { params: p }),
   getProveedorCompras: (id, p) => axios.get(`${API_URL}/api/proveedores/${id}/compras`, { params: p }),
   createProveedor: (d) => axios.post(`${API_URL}/api/proveedores`, d),
@@ -190,6 +194,7 @@ function Sidebar({ activeView, setActiveView, user, onLogout, onNavigate }) {
     { id: 'ventas', label: 'Ventas', icon: ShoppingCart, visible: check('ventas') },
     { id: 'compras', label: 'Compras', icon: Receipt, visible: check('compras') },
     { id: 'clientes', label: 'Clientes', icon: Users, visible: check('clientes') },
+    { id: 'leads', label: 'Leads', icon: Funnel, visible: check('clientes') || isAdmin },
     { id: 'proveedores', label: 'Proveedores', icon: Truck, visible: check('proveedores') },
     { id: 'gastos', label: 'Gastos', icon: Money, visible: check('gastos') },
     { id: 'inventario', label: 'Inventario', icon: Archive, visible: check('inventario') },
@@ -2212,7 +2217,7 @@ function ClientesView({ user }) {
   const [hCiudad, setHCiudad]         = useState('');
   const [hTipo, setHTipo]             = useState('');
 
-  const [form, setForm] = useState({ nombre: '', ruc: '', telefono: '', direccion: '', ciudad: '', tipo: 'Odontólogo' });
+  const [form, setForm] = useState({ nombre: '', ruc: '', telefono: '', direccion: '', ciudad: '', tipo: 'Odontólogo', ultimo_contacto: '', observaciones: '' });
 
   const isAdmin  = user?.role === 'admin';
   const canCreate = hasPermission(user, 'clientes', 'crear')    || isAdmin;
@@ -2225,8 +2230,8 @@ function ClientesView({ user }) {
   }, [search]);
   useEffect(() => { loadData(); }, [loadData]);
 
-  const openNew  = () => { setEditItem(null); setForm({ nombre: '', ruc: '', telefono: '', direccion: '', ciudad: '', tipo: 'Odontólogo' }); setShowModal(true); };
-  const openEdit = (c) => { setEditItem(c); setForm({ nombre: c.nombre, ruc: c.ruc || '', telefono: c.telefono || '', direccion: c.direccion || '', ciudad: c.ciudad || '', tipo: c.tipo || 'Odontólogo' }); setShowModal(true); };
+  const openNew  = () => { setEditItem(null); setForm({ nombre: '', ruc: '', telefono: '', direccion: '', ciudad: '', tipo: 'Odontólogo', ultimo_contacto: '', observaciones: '' }); setShowModal(true); };
+  const openEdit = (c) => { setEditItem(c); setForm({ nombre: c.nombre, ruc: c.ruc || '', telefono: c.telefono || '', direccion: c.direccion || '', ciudad: c.ciudad || '', tipo: c.tipo || 'Odontólogo', ultimo_contacto: c.ultimo_contacto || '', observaciones: c.observaciones || '' }); setShowModal(true); };
 
   const handleSave = async () => {
     if (!form.nombre) return alert('El nombre es obligatorio');
@@ -2384,6 +2389,8 @@ function ClientesView({ user }) {
                       <div className="font-medium">{c.nombre}</div>
                       {c.ruc && <div className="text-xs text-muted-foreground">RUC: {c.ruc}</div>}
                       {c.telefono && <div className="text-xs text-muted-foreground">{c.telefono}</div>}
+                      {c.ultimo_contacto && <div className="text-xs text-blue-500">📅 {new Date(c.ultimo_contacto).toLocaleDateString('es-PY')}</div>}
+                      {c.observaciones && <div className="text-xs text-muted-foreground italic truncate max-w-[160px]" title={c.observaciones}>{c.observaciones}</div>}
                     </td>
                     <td className="text-sm">{c.ciudad || '-'}</td>
                     <td>
@@ -2547,9 +2554,239 @@ function ClientesView({ user }) {
             </div>
           </div>
           <div className="form-group"><label className="form-label">Dirección</label><input type="text" value={form.direccion} onChange={e => setForm({...form, direccion: e.target.value})} className="form-input" /></div>
+          <div className="form-group">
+            <label className="form-label">Último contacto</label>
+            <input type="date" value={form.ultimo_contacto} onChange={e => setForm({...form, ultimo_contacto: e.target.value})} className="form-input" />
+          </div>
+          <div className="form-group">
+            <label className="form-label">Observaciones</label>
+            <textarea value={form.observaciones} onChange={e => setForm({...form, observaciones: e.target.value})} className="form-input" rows={3} placeholder="Notas adicionales..." style={{resize:'vertical'}} />
+          </div>
           <div className="flex justify-end gap-3">
             <button onClick={() => setShowModal(false)} className="px-4 py-2 border border-border rounded-md hover:bg-muted">Cancelar</button>
             <button onClick={handleSave} className="bg-[#E63946] text-white px-4 py-2 rounded-md hover:bg-[#D90429]" data-testid="save-cliente-btn">{editItem ? 'Actualizar' : 'Crear'}</button>
+          </div>
+        </div>
+      </Modal>
+    </div>
+  );
+}
+
+// ==================== LEADS VIEW ====================
+function LeadsView({ user }) {
+  const [leads, setLeads] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+  const [showFilters, setShowFilters] = useState(false);
+  const [filterCanal, setFilterCanal] = useState('');
+  const [filterFechaDesde, setFilterFechaDesde] = useState('');
+  const [filterFechaHasta, setFilterFechaHasta] = useState('');
+  const [sortBy, setSortBy] = useState('fecha_primer_contacto');
+  const [sortDir, setSortDir] = useState('desc');
+  const [showModal, setShowModal] = useState(false);
+  const [editItem, setEditItem] = useState(null);
+
+  const emptyForm = { nombre: '', telefono: '', fecha_primer_contacto: '', canal_origen: '', fecha_ultimo_contacto: '', observaciones: '' };
+  const [form, setForm] = useState(emptyForm);
+
+  const isAdmin  = user?.role === 'admin';
+  const canCreate = hasPermission(user, 'clientes', 'crear') || isAdmin;
+  const canEdit   = hasPermission(user, 'clientes', 'editar') || isAdmin;
+  const canDelete = hasPermission(user, 'clientes', 'eliminar') || isAdmin;
+
+  const loadData = useCallback(() => {
+    setLoading(true);
+    api.getLeads({ search, canal: filterCanal || undefined, fecha_desde: filterFechaDesde || undefined, fecha_hasta: filterFechaHasta || undefined, sort_by: sortBy, sort_dir: sortDir })
+      .then(r => setLeads(r.data.leads || []))
+      .finally(() => setLoading(false));
+  }, [search, filterCanal, filterFechaDesde, filterFechaHasta, sortBy, sortDir]);
+
+  useEffect(() => { loadData(); }, [loadData]);
+
+  const openNew  = () => { setEditItem(null); setForm(emptyForm); setShowModal(true); };
+  const openEdit = (l) => {
+    setEditItem(l);
+    setForm({
+      nombre: l.nombre,
+      telefono: l.telefono,
+      fecha_primer_contacto: l.fecha_primer_contacto || '',
+      canal_origen: l.canal_origen || '',
+      fecha_ultimo_contacto: l.fecha_ultimo_contacto || '',
+      observaciones: l.observaciones || '',
+    });
+    setShowModal(true);
+  };
+
+  const handleSave = async () => {
+    if (!form.nombre) return alert('El nombre es obligatorio');
+    if (!form.telefono) return alert('El teléfono es obligatorio');
+    if (!form.fecha_primer_contacto) return alert('La fecha de primer contacto es obligatoria');
+    try {
+      if (editItem) { await api.updateLead(editItem.id, form); }
+      else          { await api.createLead(form); }
+      setShowModal(false);
+      loadData();
+    } catch (e) { alert(formatApiError(e.response?.data?.detail)); }
+  };
+
+  const handleDelete = async (id) => {
+    if (!window.confirm('¿Eliminar este lead?')) return;
+    try { await api.deleteLead(id); loadData(); }
+    catch (e) { alert(formatApiError(e.response?.data?.detail)); }
+  };
+
+  const toggleSort = (field) => {
+    if (sortBy === field) { setSortDir(d => d === 'asc' ? 'desc' : 'asc'); }
+    else { setSortBy(field); setSortDir('desc'); }
+  };
+
+  const SortIcon = ({ field }) => {
+    if (sortBy !== field) return <span className="text-muted-foreground ml-1">↕</span>;
+    return <span className="text-[#E63946] ml-1">{sortDir === 'asc' ? '↑' : '↓'}</span>;
+  };
+
+  const hasActiveFilters = filterCanal || filterFechaDesde || filterFechaHasta;
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-heading font-bold">Leads</h1>
+          <p className="text-muted-foreground text-sm">Gestión de prospectos y seguimiento comercial</p>
+        </div>
+        {canCreate && (
+          <button onClick={openNew} className="flex items-center gap-2 bg-[#E63946] text-white px-4 py-2 rounded-md hover:bg-[#D90429]">
+            <Plus size={16} /> Nuevo Lead
+          </button>
+        )}
+      </div>
+
+      {/* Search + Filters */}
+      <div className="bg-white border border-border rounded-md p-4 space-y-3">
+        <div className="flex gap-3">
+          <div className="relative flex-1">
+            <MagnifyingGlass size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+            <input type="text" placeholder="Buscar por nombre o teléfono..." value={search} onChange={e => setSearch(e.target.value)} className="form-input pl-9 w-full" />
+          </div>
+          <button onClick={() => setShowFilters(f => !f)} className={`flex items-center gap-2 px-3 py-2 border rounded-md text-sm ${hasActiveFilters ? 'border-[#E63946] text-[#E63946]' : 'border-border hover:bg-muted'}`}>
+            <Funnel size={16} /> Filtros {hasActiveFilters && `(activos)`}
+          </button>
+        </div>
+
+        {showFilters && (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-2 border-t border-border">
+            <div className="form-group">
+              <label className="form-label">Canal de origen</label>
+              <input type="text" value={filterCanal} onChange={e => setFilterCanal(e.target.value)} className="form-input" placeholder="Ej: Instagram, WhatsApp..." />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Primer contacto desde</label>
+              <input type="date" value={filterFechaDesde} onChange={e => setFilterFechaDesde(e.target.value)} className="form-input" />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Primer contacto hasta</label>
+              <input type="date" value={filterFechaHasta} onChange={e => setFilterFechaHasta(e.target.value)} className="form-input" />
+            </div>
+            {hasActiveFilters && (
+              <div className="col-span-full flex justify-end">
+                <button onClick={() => { setFilterCanal(''); setFilterFechaDesde(''); setFilterFechaHasta(''); }} className="text-sm text-[#E63946] hover:underline">Limpiar filtros</button>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Table */}
+      <div className="bg-white border border-border rounded-md">
+        <div className="overflow-x-auto max-h-[600px]">
+          <table className="data-table">
+            <thead className="sticky top-0 bg-white">
+              <tr>
+                <th>Nombre / Teléfono</th>
+                <th>Canal Origen</th>
+                <th className="cursor-pointer select-none" onClick={() => toggleSort('fecha_primer_contacto')}>
+                  Primer Contacto <SortIcon field="fecha_primer_contacto" />
+                </th>
+                <th className="cursor-pointer select-none" onClick={() => toggleSort('fecha_ultimo_contacto')}>
+                  Último Contacto <SortIcon field="fecha_ultimo_contacto" />
+                </th>
+                <th>Observaciones</th>
+                <th className="text-center">Acciones</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading
+                ? <tr><td colSpan={6} className="text-center py-8 text-muted-foreground">Cargando...</td></tr>
+                : leads.length === 0
+                ? <tr><td colSpan={6} className="text-center py-8 text-muted-foreground">Sin leads registrados</td></tr>
+                : leads.map(l => (
+                  <tr key={l.id}>
+                    <td>
+                      <div className="font-medium">{l.nombre}</div>
+                      <div className="text-xs text-muted-foreground">{l.telefono}</div>
+                    </td>
+                    <td className="text-sm">
+                      {l.canal_origen
+                        ? <span className="badge" style={{ background: '#f3e8ff', color: '#7e22ce' }}>{l.canal_origen}</span>
+                        : <span className="text-muted-foreground">-</span>}
+                    </td>
+                    <td className="text-sm whitespace-nowrap">
+                      {l.fecha_primer_contacto
+                        ? new Date(l.fecha_primer_contacto).toLocaleDateString('es-PY')
+                        : '-'}
+                    </td>
+                    <td className="text-sm whitespace-nowrap">
+                      {l.fecha_ultimo_contacto
+                        ? new Date(l.fecha_ultimo_contacto).toLocaleDateString('es-PY')
+                        : <span className="text-muted-foreground">-</span>}
+                    </td>
+                    <td className="text-sm text-muted-foreground max-w-[200px] truncate" title={l.observaciones}>
+                      {l.observaciones || '-'}
+                    </td>
+                    <td className="text-center">
+                      <div className="flex items-center justify-center gap-1">
+                        {canEdit   && <button onClick={() => openEdit(l)}   className="p-1 hover:bg-yellow-50 rounded text-yellow-600" title="Editar"><Pencil size={16} /></button>}
+                        {canDelete && <button onClick={() => handleDelete(l.id)} className="p-1 hover:bg-red-50 rounded text-red-600" title="Eliminar"><Trash size={16} /></button>}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Modal Crear / Editar Lead */}
+      <Modal isOpen={showModal} onClose={() => setShowModal(false)} title={editItem ? 'Editar Lead' : 'Nuevo Lead'} size="md">
+        <div className="space-y-4">
+          <div className="form-group">
+            <label className="form-label">Nombre *</label>
+            <input type="text" value={form.nombre} onChange={e => setForm({...form, nombre: e.target.value})} className="form-input" placeholder="Nombre del prospecto" />
+          </div>
+          <div className="form-group">
+            <label className="form-label">Teléfono *</label>
+            <input type="text" value={form.telefono} onChange={e => setForm({...form, telefono: e.target.value})} className="form-input" placeholder="Ej: 0981 123456" />
+          </div>
+          <div className="form-group">
+            <label className="form-label">Fecha primer contacto *</label>
+            <input type="date" value={form.fecha_primer_contacto} onChange={e => setForm({...form, fecha_primer_contacto: e.target.value})} className="form-input" />
+          </div>
+          <div className="form-group">
+            <label className="form-label">Canal de origen</label>
+            <input type="text" value={form.canal_origen} onChange={e => setForm({...form, canal_origen: e.target.value})} className="form-input" placeholder="Ej: Instagram, WhatsApp, referido..." />
+          </div>
+          <div className="form-group">
+            <label className="form-label">Fecha último contacto</label>
+            <input type="date" value={form.fecha_ultimo_contacto} onChange={e => setForm({...form, fecha_ultimo_contacto: e.target.value})} className="form-input" />
+          </div>
+          <div className="form-group">
+            <label className="form-label">Observaciones</label>
+            <textarea value={form.observaciones} onChange={e => setForm({...form, observaciones: e.target.value})} className="form-input" rows={3} placeholder="Notas sobre el prospecto..." style={{resize:'vertical'}} />
+          </div>
+          <div className="flex justify-end gap-3">
+            <button onClick={() => setShowModal(false)} className="px-4 py-2 border border-border rounded-md hover:bg-muted">Cancelar</button>
+            <button onClick={handleSave} className="bg-[#E63946] text-white px-4 py-2 rounded-md hover:bg-[#D90429]">{editItem ? 'Actualizar' : 'Crear'}</button>
           </div>
         </div>
       </Modal>
@@ -3685,6 +3922,7 @@ function App() {
       case 'ventas': return <VentasView user={user} />;
       case 'compras': return <ComprasView user={user} />;
       case 'clientes': return <ClientesView user={user} />;
+      case 'leads': return <LeadsView user={user} />;
       case 'proveedores': return <ProveedoresView user={user} />;
       case 'gastos': return <GastosView user={user} />;
       case 'inventario': return <InventarioView />;
