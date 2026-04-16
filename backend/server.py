@@ -1476,7 +1476,7 @@ def create_compra(request: Request, compra: CompraBase):
             {"_id": ObjectId(item.producto_id)},
             {
                 "$inc": {"stock": item.cantidad},
-                "$set": {"costo": item.precio_unitario * (1 - item.iva_pct/(100+item.iva_pct))}
+                "$set": {"costo": item.precio_unitario}  # precio_unitario ya incluye IVA
             }
         )
         

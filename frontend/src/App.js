@@ -30,6 +30,17 @@ const formatGs = (value) => {
   if (!value && value !== 0) return 'Gs. 0';
   return 'Gs. ' + Math.round(value).toLocaleString('es-PY');
 };
+
+// Parsea fechas tipo "YYYY-MM-DD" como fecha local (evita desfase de timezone UTC)
+const parseFecha = (dateStr) => {
+  if (!dateStr) return new Date();
+  const s = typeof dateStr === 'string' ? dateStr.split('T')[0] : null;
+  if (s && /^\d{4}-\d{2}-\d{2}$/.test(s)) {
+    const [y, m, d] = s.split('-').map(Number);
+    return new Date(y, m - 1, d);
+  }
+  return new Date(dateStr);
+};
 const formatGsShort = (value) => {
   if (!value) return '0';
   if (value >= 1000000000) return (value / 1000000000).toFixed(1) + 'B';
@@ -1686,7 +1697,7 @@ function VentasView({ user }) {
               : filteredVentas.length === 0 ? <tr><td colSpan={6} className="text-center py-8">Sin ventas registradas</td></tr>
               : filteredVentas.map(v => (
                 <tr key={v.id}>
-                  <td className="whitespace-nowrap">{new Date(v.fecha).toLocaleDateString('es-PY')}</td>
+                  <td className="whitespace-nowrap">{parseFecha(v.fecha).toLocaleDateString('es-PY')}</td>
                   <td className="font-medium">{v.cliente_nombre}</td>
                   <td className="text-sm max-w-xs truncate">{getItemsLabel(v.items)}</td>
                   <td className="text-right font-mono">{formatGs(v.total)}</td>
@@ -1711,7 +1722,7 @@ function VentasView({ user }) {
           <div className="space-y-4">
             <div className="grid grid-cols-3 gap-4 text-sm bg-muted/30 rounded-lg p-3">
               <div><span className="text-muted-foreground">Cliente</span><div className="font-medium">{selectedVenta.cliente_nombre}</div></div>
-              <div><span className="text-muted-foreground">Fecha</span><div className="font-medium">{new Date(selectedVenta.fecha).toLocaleDateString('es-PY')}</div></div>
+              <div><span className="text-muted-foreground">Fecha</span><div className="font-medium">{parseFecha(selectedVenta.fecha).toLocaleDateString('es-PY')}</div></div>
               {selectedVenta.vendedor_nombre && <div><span className="text-muted-foreground">Vendedor</span><div className="font-medium">{selectedVenta.vendedor_nombre}</div></div>}
             </div>
             <div className="overflow-x-auto">
@@ -2016,7 +2027,7 @@ function ComprasView({ user }) {
               : filteredCompras.length === 0 ? <tr><td colSpan={6} className="text-center py-8">Sin compras registradas</td></tr>
               : filteredCompras.map(c => (
                 <tr key={c.id}>
-                  <td className="whitespace-nowrap">{new Date(c.fecha).toLocaleDateString('es-PY')}</td>
+                  <td className="whitespace-nowrap">{parseFecha(c.fecha).toLocaleDateString('es-PY')}</td>
                   <td className="font-medium">{c.proveedor_nombre}</td>
                   <td className="text-sm">{c.numero_factura || '-'}</td>
                   <td className="text-sm max-w-xs truncate">{getItemsLabel(c.items)}</td>
@@ -2041,7 +2052,7 @@ function ComprasView({ user }) {
           <div className="space-y-4">
             <div className="grid grid-cols-3 gap-4 text-sm bg-muted/30 rounded-lg p-3">
               <div><span className="text-muted-foreground">Proveedor</span><div className="font-medium">{selectedCompra.proveedor_nombre}</div></div>
-              <div><span className="text-muted-foreground">Fecha</span><div className="font-medium">{new Date(selectedCompra.fecha).toLocaleDateString('es-PY')}</div></div>
+              <div><span className="text-muted-foreground">Fecha</span><div className="font-medium">{parseFecha(selectedCompra.fecha).toLocaleDateString('es-PY')}</div></div>
               {selectedCompra.numero_factura && <div><span className="text-muted-foreground">Factura</span><div className="font-medium">{selectedCompra.numero_factura}</div></div>}
             </div>
             <div className="overflow-x-auto">
@@ -2151,7 +2162,7 @@ function ComprasView({ user }) {
                         <td className="text-center">
                           <input type="number" value={item.cantidad} min="1"
                             onChange={(e) => updateItemQty(i, e.target.value)}
-                            className="form-input text-center p-1 w-16" />
+                            className="form-input text-center p-1 w-24" />
                         </td>
                         <td className="text-right">
                           <input type="number" value={item.precio_unitario} min="0"
@@ -2507,7 +2518,7 @@ function ClientesView({ user }) {
                         : '-';
                       return (
                         <tr key={i}>
-                          <td className="whitespace-nowrap">{v.fecha ? new Date(v.fecha).toLocaleDateString('es-PY') : '-'}</td>
+                          <td className="whitespace-nowrap">{v.fecha ? parseFecha(v.fecha).toLocaleDateString('es-PY') : '-'}</td>
                           <td className="text-sm max-w-[200px] truncate" title={productoLabel}>{productoLabel}</td>
                           <td className="text-center">
                             <span className="badge badge-success">{(v.items || []).length}</span>
@@ -3058,7 +3069,7 @@ function ProveedoresView({ user }) {
                   <tbody>
                     {historialCompras.map((c, i) => (
                       <tr key={i}>
-                        <td className="whitespace-nowrap">{c.fecha ? new Date(c.fecha).toLocaleDateString('es-PY') : '-'}</td>
+                        <td className="whitespace-nowrap">{c.fecha ? parseFecha(c.fecha).toLocaleDateString('es-PY') : '-'}</td>
                         <td className="text-sm font-mono">{c.numero_factura || '-'}</td>
                         <td className="text-center">
                           <span className="badge badge-success">{(c.items || []).length}</span>
