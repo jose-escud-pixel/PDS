@@ -147,10 +147,21 @@ def registrar_auditoria(usuario_id: str, usuario_email: str, accion: str, modulo
     })
 
 # ============ STOCK MOVEMENTS ============
-def registrar_movimiento_stock(producto_id: str, producto_nombre: str, tipo: str, cantidad: int, 
-                                referencia_id: str = None, referencia_tipo: str = None, 
+def registrar_movimiento_stock(producto_id: str, producto_nombre: str, tipo: str, cantidad: int,
+                                referencia_id: str = None, referencia_tipo: str = None,
                                 usuario_id: str = None, usuario_email: str = None, stock_anterior: int = 0,
-                                variante: str = None, costo_unitario: float = 0, valor_movimiento: float = 0):
+                                variante: str = None, costo_unitario: float = 0, valor_movimiento: float = 0,
+                                stock_nuevo_override: int = None):
+    # Calcular stock_nuevo según tipo
+    if stock_nuevo_override is not None:
+        stock_nuevo = stock_nuevo_override
+    elif tipo == "entrada":
+        stock_nuevo = stock_anterior + cantidad
+    elif tipo == "salida":
+        stock_nuevo = max(stock_anterior - cantidad, 0)  # nunca negativo
+    else:  # ajuste: cantidad es el valor absoluto final
+        stock_nuevo = cantidad
+
     stock_movimientos_col.insert_one({
         "producto_id": producto_id,
         "producto_nombre": producto_nombre,
@@ -158,7 +169,7 @@ def registrar_movimiento_stock(producto_id: str, producto_nombre: str, tipo: str
         "tipo": tipo,  # entrada, salida, ajuste
         "cantidad": cantidad,
         "stock_anterior": stock_anterior,
-        "stock_nuevo": stock_anterior + cantidad if tipo == "entrada" else stock_anterior - cantidad,
+        "stock_nuevo": stock_nuevo,
         "costo_unitario": costo_unitario,
         "valor_movimiento": valor_movimiento,
         "referencia_id": referencia_id,
@@ -259,6 +270,7 @@ class CompraItem(BaseModel):
     nombre: str
     cantidad: int
     precio_unitario: float
+    costo_unitario: Optional[float] = None   # si no viene, se usa precio_unitario
     iva_pct: int = 10
 
 class CompraBase(BaseModel):
@@ -688,7 +700,8 @@ def ajustar_stock(request: Request, producto_id: str, data: AjusteStock):
         referencia_tipo="ajuste",
         usuario_id=user["id"],
         usuario_email=user["email"],
-        stock_anterior=stock_anterior
+        stock_anterior=stock_anterior,
+        stock_nuevo_override=nuevo_stock
     )
     
     registrar_auditoria(user["id"], user["email"], "ajuste_stock", "productos",
@@ -870,6 +883,7 @@ def create_producto(request: Request, producto: ProductoBase):
                         {"producto_id": str(result.inserted_id), "codigo": producto.codigo})
     
     if producto.stock > 0:
+        costo_inicial = float(producto.costo or 0)
         registrar_movimiento_stock(
             producto_id=str(result.inserted_id),
             producto_nombre=producto.nombre,
@@ -878,7 +892,9 @@ def create_producto(request: Request, producto: ProductoBase):
             referencia_tipo="inicial",
             usuario_id=user["id"],
             usuario_email=user["email"],
-            stock_anterior=0
+            stock_anterior=0,
+            costo_unitario=costo_inicial,
+            valor_movimiento=round(costo_inicial * producto.stock, 2)
         )
     
     return {"id": str(result.inserted_id), "message": "Producto creado"}
@@ -1382,12 +1398,15 @@ def create_venta(request: Request, venta: VentaBase):
     for item in venta.items:
         producto = productos_col.find_one({"_id": ObjectId(item.producto_id)})
         stock_anterior = producto.get("stock", 0)
-        
+
+        # costo_unitario viene del VentaItem (costo promedio vigente al momento de vender)
+        costo_unit = item.costo_unitario
+
         productos_col.update_one(
             {"_id": ObjectId(item.producto_id)},
             {"$inc": {"stock": -item.cantidad}}
         )
-        
+
         registrar_movimiento_stock(
             producto_id=item.producto_id,
             producto_nombre=item.nombre,
@@ -1397,7 +1416,9 @@ def create_venta(request: Request, venta: VentaBase):
             referencia_tipo="venta",
             usuario_id=user["id"],
             usuario_email=user["email"],
-            stock_anterior=stock_anterior
+            stock_anterior=stock_anterior,
+            costo_unitario=costo_unit,
+            valor_movimiento=round(costo_unit * item.cantidad, 2)
         )
     
     clientes_col.update_one(
@@ -1471,15 +1492,29 @@ def create_compra(request: Request, compra: CompraBase):
     for item in compra.items:
         producto = productos_col.find_one({"_id": ObjectId(item.producto_id)})
         stock_anterior = producto.get("stock", 0) if producto else 0
-        
+
+        # El costo unitario real de esta compra es precio_unitario (precio de compra con IVA incluido).
+        # Si el frontend envía costo_unitario explícito, se usa ese; si no, se usa precio_unitario.
+        costo_unit = item.costo_unitario if item.costo_unitario is not None else item.precio_unitario
+
+        # Cálculo de costo promedio ponderado: (stock_ant × costo_ant + cant × costo_nuevo) / (stock_ant + cant)
+        costo_actual = float(producto.get("costo") or 0) if producto else 0.0
+        stock_nuevo = stock_anterior + item.cantidad
+        if stock_nuevo > 0:
+            nuevo_costo_promedio = round(
+                (stock_anterior * costo_actual + item.cantidad * costo_unit) / stock_nuevo, 2
+            )
+        else:
+            nuevo_costo_promedio = costo_unit
+
         productos_col.update_one(
             {"_id": ObjectId(item.producto_id)},
             {
                 "$inc": {"stock": item.cantidad},
-                "$set": {"costo": item.precio_unitario}  # precio_unitario ya incluye IVA
+                "$set": {"costo": nuevo_costo_promedio}   # actualizar al nuevo promedio ponderado
             }
         )
-        
+
         registrar_movimiento_stock(
             producto_id=item.producto_id,
             producto_nombre=item.nombre,
@@ -1489,7 +1524,9 @@ def create_compra(request: Request, compra: CompraBase):
             referencia_tipo="compra",
             usuario_id=user["id"],
             usuario_email=user["email"],
-            stock_anterior=stock_anterior
+            stock_anterior=stock_anterior,
+            costo_unitario=costo_unit,
+            valor_movimiento=round(costo_unit * item.cantidad, 2)
         )
     
     proveedores_col.update_one(
@@ -1764,7 +1801,12 @@ def get_inventario(request: Request, skip: int = 0, limit: int = 100, search: st
             for m in movements:
                 tipo = m.get("tipo", "")
                 cantidad = int(m.get("cantidad") or 0)
+                # valor_movimiento es la fuente principal; si es 0 o nulo (registros viejos),
+                # se reconstruye como costo_unitario × cantidad
                 valor_mov = float(m.get("valor_movimiento") or 0)
+                costo_unit_mov = float(m.get("costo_unitario") or 0)
+                if valor_mov == 0 and costo_unit_mov > 0:
+                    valor_mov = costo_unit_mov * cantidad
 
                 if tipo == "entrada":
                     stock_calc += cantidad
@@ -1773,12 +1815,12 @@ def get_inventario(request: Request, skip: int = 0, limit: int = 100, search: st
                 elif tipo == "salida":
                     stock_calc -= cantidad
                 elif tipo == "ajuste":
-                    # ajuste puede ser positivo o negativo según stock_nuevo - stock_anterior
-                    stock_ant = int(m.get("stock_anterior") or 0)
+                    # ajuste fija el stock directamente en stock_nuevo
                     stock_nvo = int(m.get("stock_nuevo") or 0)
-                    stock_calc = stock_nvo  # ajuste fija el stock directamente
+                    stock_calc = stock_nvo
 
-            # Costo promedio ponderado usando solo entradas
+            # Costo promedio ponderado: total_valor_entradas / total_unidades_entradas
+            # Si no hay movimientos de entrada con costo, usa el costo guardado en el producto
             costo_promedio = float(p.get("costo") or 0)
             if cant_entradas > 0 and valor_entradas > 0:
                 costo_promedio = valor_entradas / cant_entradas
