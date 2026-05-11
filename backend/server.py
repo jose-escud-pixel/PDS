@@ -59,6 +59,7 @@ dashboard_config_col = db["dashboard_config"]
 metas_col = db["metas"]
 plantillas_col = db["plantillas"]
 leads_col = db["leads"]
+presupuestos_col = db["presupuestos"]   # módulo Presupuestos (cotizaciones)
 
 # ============ PASSWORD & JWT ============
 def hash_password(password: str) -> str:
@@ -316,6 +317,44 @@ class GastoUpdate(BaseModel):
     proveedor_nombre: Optional[str] = None
     monto: Optional[float] = None
     observaciones: Optional[str] = None
+
+# ───────────── PRESUPUESTOS / COTIZACIONES ─────────────
+# Comparte la forma de los items con VentaItem (mismos campos), pero NO descuenta
+# stock ni actualiza historial del cliente. Cuando un presupuesto se "convierte"
+# en venta, se copian los items a la colección de ventas y ahí sí se descuenta
+# stock como en cualquier venta normal.
+PRESUPUESTO_ESTADOS = {"borrador", "enviado", "aceptado", "rechazado", "vencido", "convertido"}
+
+class PresupuestoItem(BaseModel):
+    producto_id: str
+    codigo: str
+    nombre: str
+    variante: Optional[str] = ""
+    cantidad: int
+    precio_unitario: float
+    costo_unitario: float = 0
+    iva_pct: int = 10
+
+class PresupuestoBase(BaseModel):
+    cliente_id: str
+    cliente_nombre: str
+    fecha: Optional[str] = None              # fecha de emisión
+    fecha_validez: Optional[str] = None      # vence el…
+    items: List[PresupuestoItem]
+    observaciones: Optional[str] = ""
+    estado: Optional[str] = "borrador"       # borrador / enviado / aceptado / rechazado / vencido / convertido
+
+class PresupuestoUpdate(BaseModel):
+    cliente_id: Optional[str] = None
+    cliente_nombre: Optional[str] = None
+    fecha: Optional[str] = None
+    fecha_validez: Optional[str] = None
+    estado: Optional[str] = None
+    observaciones: Optional[str] = None
+    items: Optional[list] = None
+
+class PresupuestoEstado(BaseModel):
+    estado: str
 
 class LeadBase(BaseModel):
     nombre: str
@@ -1631,8 +1670,306 @@ def delete_venta(request: Request, venta_id: str):
     
     ventas_col.delete_one({"_id": venta_oid})
     registrar_auditoria(user["id"], user["email"], "eliminar", "ventas", {"venta_id": venta_id})
-    
+
     return {"message": "Venta eliminada"}
+
+# ============ PRESUPUESTOS / COTIZACIONES ============
+# Calcula totales de un presupuesto (mismo cálculo que una venta).
+def _presupuesto_totales(items):
+    total = 0.0
+    total_costo = 0.0
+    total_iva = 0.0
+    for it in items:
+        # it puede ser un PresupuestoItem o un dict (cuando viene de Mongo)
+        if isinstance(it, dict):
+            cantidad        = int(it.get("cantidad") or 0)
+            precio_unit     = float(it.get("precio_unitario") or 0)
+            costo_unit      = float(it.get("costo_unitario") or 0)
+            iva_pct         = int(it.get("iva_pct") or 10)
+        else:
+            cantidad        = int(it.cantidad)
+            precio_unit     = float(it.precio_unitario)
+            costo_unit      = float(it.costo_unitario or 0)
+            iva_pct         = int(it.iva_pct or 10)
+        subtotal = cantidad * precio_unit
+        iva      = subtotal * iva_pct / (100 + iva_pct) if (100 + iva_pct) else 0
+        total       += subtotal
+        total_costo += cantidad * costo_unit
+        total_iva   += iva
+    return total, total_costo, total_iva
+
+@app.get("/api/presupuestos")
+def get_presupuestos(
+    request: Request,
+    cliente_id: Optional[str] = None,
+    estado: Optional[str] = None,
+    fecha_desde: Optional[str] = None,
+    fecha_hasta: Optional[str] = None,
+    skip: int = 0,
+    limit: int = 1000
+):
+    user = get_current_user(request)
+    if not check_permission(user, "presupuestos", "ver"):
+        raise HTTPException(status_code=403, detail="Sin permiso para ver presupuestos")
+    query = {}
+    if cliente_id:
+        query["cliente_id"] = cliente_id
+    if estado:
+        query["estado"] = estado
+    if fecha_desde:
+        query["fecha"] = {"$gte": fecha_desde}
+    if fecha_hasta:
+        query.setdefault("fecha", {})
+        query["fecha"]["$lte"] = fecha_hasta
+    total = presupuestos_col.count_documents(query)
+    docs  = list(presupuestos_col.find(query).sort("fecha", -1).skip(skip).limit(limit))
+    return {"total": total, "presupuestos": serialize_docs(docs)}
+
+@app.get("/api/presupuestos/{presupuesto_id}")
+def get_presupuesto(request: Request, presupuesto_id: str):
+    user = get_current_user(request)
+    if not check_permission(user, "presupuestos", "ver"):
+        raise HTTPException(status_code=403, detail="Sin permiso para ver presupuestos")
+    try:
+        doc = presupuestos_col.find_one({"_id": ObjectId(presupuesto_id)})
+    except Exception:
+        raise HTTPException(status_code=400, detail="ID inválido")
+    if not doc:
+        raise HTTPException(status_code=404, detail="Presupuesto no encontrado")
+    return serialize_doc(doc)
+
+@app.post("/api/presupuestos")
+def create_presupuesto(request: Request, presupuesto: PresupuestoBase):
+    user = get_current_user(request)
+    if not check_permission(user, "presupuestos", "crear"):
+        raise HTTPException(status_code=403, detail="Sin permiso para crear presupuestos")
+    estado = (presupuesto.estado or "borrador").lower()
+    if estado not in PRESUPUESTO_ESTADOS:
+        raise HTTPException(status_code=400, detail=f"Estado inválido. Permitidos: {sorted(PRESUPUESTO_ESTADOS)}")
+    if not presupuesto.items:
+        raise HTTPException(status_code=400, detail="El presupuesto debe tener al menos un ítem")
+
+    # Validamos que cada producto exista (sin tocar stock — todavía no es venta)
+    for item in presupuesto.items:
+        try:
+            ObjectId(item.producto_id)
+        except Exception:
+            raise HTTPException(status_code=400, detail=f"Producto ID inválido: {item.producto_id}")
+
+    total, total_costo, total_iva = _presupuesto_totales(presupuesto.items)
+    data = {
+        "cliente_id":      presupuesto.cliente_id,
+        "cliente_nombre":  presupuesto.cliente_nombre,
+        "items":           [it.model_dump() for it in presupuesto.items],
+        "total":           total,
+        "total_costo":     total_costo,
+        "total_iva":       total_iva,
+        "utilidad":        total - total_costo,
+        "observaciones":   presupuesto.observaciones,
+        "fecha":           presupuesto.fecha or datetime.now(timezone.utc).isoformat(),
+        "fecha_validez":   presupuesto.fecha_validez,
+        "estado":          estado,
+        "venta_id":        None,                  # se rellena al convertir
+        "convertido_at":   None,
+        "created_at":      datetime.now(timezone.utc).isoformat(),
+        "created_by":      user["id"],
+        "creado_por":      user["email"],
+    }
+    result = presupuestos_col.insert_one(data)
+    registrar_auditoria(user["id"], user["email"], "crear", "presupuestos",
+                        {"presupuesto_id": str(result.inserted_id),
+                         "total": total, "cliente": presupuesto.cliente_nombre})
+    return {"id": str(result.inserted_id), "message": "Presupuesto creado",
+            "total": total, "utilidad": total - total_costo}
+
+@app.put("/api/presupuestos/{presupuesto_id}")
+def update_presupuesto(request: Request, presupuesto_id: str, data: PresupuestoUpdate):
+    user = get_current_user(request)
+    if not check_permission(user, "presupuestos", "editar"):
+        raise HTTPException(status_code=403, detail="Sin permiso para editar presupuestos")
+    try:
+        oid = ObjectId(presupuesto_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="ID inválido")
+    doc = presupuestos_col.find_one({"_id": oid})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Presupuesto no encontrado")
+    if doc.get("estado") == "convertido":
+        raise HTTPException(status_code=400, detail="No se puede editar un presupuesto ya convertido en venta")
+
+    update_fields = {k: v for k, v in data.model_dump().items() if v is not None}
+    if not update_fields:
+        raise HTTPException(status_code=400, detail="No hay datos para actualizar")
+    if "estado" in update_fields:
+        if update_fields["estado"] not in PRESUPUESTO_ESTADOS:
+            raise HTTPException(status_code=400, detail="Estado inválido")
+    # Si vienen items, recalculamos totales
+    if "items" in update_fields and update_fields["items"]:
+        total, total_costo, total_iva = _presupuesto_totales(update_fields["items"])
+        update_fields["total"]       = total
+        update_fields["total_costo"] = total_costo
+        update_fields["total_iva"]   = total_iva
+        update_fields["utilidad"]    = total - total_costo
+    update_fields["updated_at"] = datetime.now(timezone.utc).isoformat()
+    presupuestos_col.update_one({"_id": oid}, {"$set": update_fields})
+    registrar_auditoria(user["id"], user["email"], "actualizar", "presupuestos",
+                        {"presupuesto_id": presupuesto_id})
+    return {"message": "Presupuesto actualizado"}
+
+@app.delete("/api/presupuestos/{presupuesto_id}")
+def delete_presupuesto(request: Request, presupuesto_id: str):
+    user = get_current_user(request)
+    if not check_permission(user, "presupuestos", "eliminar"):
+        raise HTTPException(status_code=403, detail="Sin permiso para eliminar presupuestos")
+    try:
+        oid = ObjectId(presupuesto_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="ID inválido")
+    doc = presupuestos_col.find_one({"_id": oid})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Presupuesto no encontrado")
+    if doc.get("estado") == "convertido":
+        raise HTTPException(status_code=400, detail="No se puede eliminar un presupuesto ya convertido. Eliminá primero la venta.")
+    presupuestos_col.delete_one({"_id": oid})
+    registrar_auditoria(user["id"], user["email"], "eliminar", "presupuestos",
+                        {"presupuesto_id": presupuesto_id})
+    return {"message": "Presupuesto eliminado"}
+
+@app.put("/api/presupuestos/{presupuesto_id}/estado")
+def cambiar_estado_presupuesto(request: Request, presupuesto_id: str, body: PresupuestoEstado):
+    user = get_current_user(request)
+    if not check_permission(user, "presupuestos", "editar"):
+        raise HTTPException(status_code=403, detail="Sin permiso para editar presupuestos")
+    estado = (body.estado or "").lower()
+    if estado not in PRESUPUESTO_ESTADOS:
+        raise HTTPException(status_code=400, detail=f"Estado inválido. Permitidos: {sorted(PRESUPUESTO_ESTADOS)}")
+    if estado == "convertido":
+        raise HTTPException(status_code=400, detail="Use el endpoint /convertir para marcar como convertido")
+    try:
+        oid = ObjectId(presupuesto_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="ID inválido")
+    doc = presupuestos_col.find_one({"_id": oid})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Presupuesto no encontrado")
+    if doc.get("estado") == "convertido":
+        raise HTTPException(status_code=400, detail="No se puede cambiar el estado de un presupuesto convertido")
+    presupuestos_col.update_one({"_id": oid}, {"$set": {
+        "estado": estado, "updated_at": datetime.now(timezone.utc).isoformat()
+    }})
+    registrar_auditoria(user["id"], user["email"], "estado", "presupuestos",
+                        {"presupuesto_id": presupuesto_id, "estado": estado})
+    return {"message": f"Estado actualizado a {estado}"}
+
+@app.post("/api/presupuestos/{presupuesto_id}/convertir")
+def convertir_presupuesto_en_venta(request: Request, presupuesto_id: str):
+    """
+    Toma un presupuesto y crea una VENTA con los mismos ítems, cliente y observaciones.
+    A diferencia de la creación de un presupuesto, esto SÍ:
+      - valida stock
+      - descuenta stock
+      - registra movimientos
+      - actualiza el cliente
+    Marca el presupuesto como `convertido` y guarda `venta_id`.
+    """
+    user = get_current_user(request)
+    if not check_permission(user, "presupuestos", "editar"):
+        raise HTTPException(status_code=403, detail="Sin permiso para convertir presupuestos")
+    if not check_permission(user, "ventas", "crear"):
+        raise HTTPException(status_code=403, detail="Sin permiso para crear ventas")
+    try:
+        oid = ObjectId(presupuesto_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="ID inválido")
+    pres = presupuestos_col.find_one({"_id": oid})
+    if not pres:
+        raise HTTPException(status_code=404, detail="Presupuesto no encontrado")
+    if pres.get("estado") == "convertido":
+        raise HTTPException(status_code=400, detail="Este presupuesto ya fue convertido en venta")
+
+    items = pres.get("items") or []
+    if not items:
+        raise HTTPException(status_code=400, detail="Presupuesto sin ítems")
+
+    # Validar stock disponible (igual que en /api/ventas POST)
+    for it in items:
+        try:
+            producto = productos_col.find_one({"_id": ObjectId(it["producto_id"])})
+        except Exception:
+            raise HTTPException(status_code=400, detail=f"Producto ID inválido: {it.get('producto_id')}")
+        if not producto:
+            raise HTTPException(status_code=404, detail=f"Producto no encontrado: {it.get('codigo')}")
+        if producto.get("stock", 0) < int(it.get("cantidad") or 0):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Stock insuficiente para {it.get('nombre')}. Disponible: {producto.get('stock', 0)}"
+            )
+
+    total, total_costo, total_iva = _presupuesto_totales(items)
+    venta_data = {
+        "cliente_id":      pres.get("cliente_id"),
+        "cliente_nombre":  pres.get("cliente_nombre"),
+        "items":           items,
+        "total":           total,
+        "total_costo":     total_costo,
+        "total_iva":       total_iva,
+        "utilidad":        total - total_costo,
+        "observaciones":   pres.get("observaciones") or "",
+        "fecha":           datetime.now(timezone.utc).isoformat(),
+        "created_at":      datetime.now(timezone.utc).isoformat(),
+        "created_by":      user["id"],
+        "vendedor":        user["email"],
+        "presupuesto_id":  str(pres["_id"]),   # trazabilidad
+    }
+    venta_result = ventas_col.insert_one(venta_data)
+    venta_id = str(venta_result.inserted_id)
+
+    # Descontar stock + registrar movimientos
+    for it in items:
+        producto = productos_col.find_one({"_id": ObjectId(it["producto_id"])})
+        stock_anterior = producto.get("stock", 0) if producto else 0
+        costo_unit = float(it.get("costo_unitario") or 0)
+        productos_col.update_one(
+            {"_id": ObjectId(it["producto_id"])},
+            {"$inc": {"stock": -int(it["cantidad"])}}
+        )
+        registrar_movimiento_stock(
+            producto_id=it["producto_id"],
+            producto_nombre=it.get("nombre") or "",
+            tipo="salida",
+            cantidad=int(it["cantidad"]),
+            referencia_id=venta_id,
+            referencia_tipo="venta",
+            usuario_id=user["id"],
+            usuario_email=user["email"],
+            stock_anterior=stock_anterior,
+            costo_unitario=costo_unit,
+            valor_movimiento=round(costo_unit * int(it["cantidad"]), 2)
+        )
+
+    # Actualizar cliente
+    if pres.get("cliente_id"):
+        try:
+            clientes_col.update_one(
+                {"_id": ObjectId(pres["cliente_id"])},
+                {
+                    "$inc": {"total_compras": total},
+                    "$set": {"ultima_compra": datetime.now(timezone.utc).isoformat()}
+                }
+            )
+        except Exception:
+            pass
+
+    # Marcar el presupuesto como convertido
+    presupuestos_col.update_one({"_id": oid}, {"$set": {
+        "estado":        "convertido",
+        "venta_id":      venta_id,
+        "convertido_at": datetime.now(timezone.utc).isoformat(),
+        "convertido_por": user["email"],
+    }})
+    registrar_auditoria(user["id"], user["email"], "convertir", "presupuestos",
+                        {"presupuesto_id": presupuesto_id, "venta_id": venta_id, "total": total})
+    return {"id": venta_id, "message": "Presupuesto convertido en venta", "total": total}
 
 # ============ COMPRAS - GET, PUT, DELETE ============
 @app.get("/api/compras/{compra_id}")

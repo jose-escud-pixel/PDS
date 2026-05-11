@@ -41,6 +41,14 @@ const parseFecha = (dateStr) => {
   }
   return new Date(dateStr);
 };
+// Render seguro de fecha en es-PY: si es null/'' devuelve '-', si no usa parseFecha
+// para evitar el bug de timezone (ej: "2026-05-05" mostrándose como 04/05/2026).
+const formatFechaPY = (dateStr, placeholder = '-') => {
+  if (!dateStr) return placeholder;
+  const d = parseFecha(dateStr);
+  if (!(d instanceof Date) || isNaN(d.getTime())) return placeholder;
+  return d.toLocaleDateString('es-PY');
+};
 const formatGsShort = (value) => {
   if (!value) return '0';
   if (value >= 1000000000) return (value / 1000000000).toFixed(1) + 'B';
@@ -140,7 +148,15 @@ const api = {
   getProductosMasRentables: (p) => axios.get(`${API_URL}/api/estadisticas/productos-mas-rentables`, { params: p }),
   getProductosSinMovimiento: (p) => axios.get(`${API_URL}/api/estadisticas/productos-sin-movimiento`, { params: p }),
   getRotacionStock: (p) => axios.get(`${API_URL}/api/estadisticas/rotacion-stock`, { params: p }),
-  getClientesTop: (p) => axios.get(`${API_URL}/api/estadisticas/clientes-top`, { params: p })
+  getClientesTop: (p) => axios.get(`${API_URL}/api/estadisticas/clientes-top`, { params: p }),
+  // ── PRESUPUESTOS / COTIZACIONES ──
+  getPresupuestos:    (p)        => axios.get(`${API_URL}/api/presupuestos`, { params: p }),
+  getPresupuesto:     (id)       => axios.get(`${API_URL}/api/presupuestos/${id}`),
+  createPresupuesto:  (d)        => axios.post(`${API_URL}/api/presupuestos`, d),
+  updatePresupuesto:  (id, d)    => axios.put(`${API_URL}/api/presupuestos/${id}`, d),
+  deletePresupuesto:  (id)       => axios.delete(`${API_URL}/api/presupuestos/${id}`),
+  setPresupuestoEstado: (id, e)  => axios.put(`${API_URL}/api/presupuestos/${id}/estado`, { estado: e }),
+  convertirPresupuesto: (id)     => axios.post(`${API_URL}/api/presupuestos/${id}/convertir`)
 };
 
 // Login Page
@@ -202,6 +218,7 @@ function Sidebar({ activeView, setActiveView, user, onLogout, onNavigate }) {
     { id: 'dashboard', label: 'Dashboard', icon: House, visible: true },
     { id: 'estadisticas', label: 'Estadísticas', icon: ChartLine, visible: check('estadisticas') },
     { id: 'productos', label: 'Productos', icon: Package, visible: check('productos') },
+    { id: 'presupuestos', label: 'Presupuestos', icon: FileText, visible: check('presupuestos') || isAdmin },
     { id: 'ventas', label: 'Ventas', icon: ShoppingCart, visible: check('ventas') },
     { id: 'compras', label: 'Compras', icon: Receipt, visible: check('compras') },
     { id: 'clientes', label: 'Clientes', icon: Users, visible: check('clientes') },
@@ -1576,9 +1593,43 @@ function VentasView({ user }) {
     items: [], observaciones: ''
   });
   const [itemQty, setItemQty] = useState(1);
+  // Conversión desde presupuesto
+  const [showConvertModal, setShowConvertModal] = useState(false);
+  const [presupuestosDisponibles, setPresupuestosDisponibles] = useState([]);
+  const [loadingPresupuestos, setLoadingPresupuestos] = useState(false);
   const isAdmin = user?.role === 'admin';
   const canEdit = hasPermission(user, 'ventas', 'editar') || isAdmin;
   const canDelete = hasPermission(user, 'ventas', 'eliminar') || isAdmin;
+  // Sólo mostramos "Desde presupuesto" si el usuario tiene visibilidad sobre el
+  // módulo Presupuestos (además de poder crear ventas). Si no, ocultamos el
+  // botón completo — la API igual le respondería 403.
+  const canUsePresupuestos = hasPermission(user, 'presupuestos', 'ver') || isAdmin;
+
+  // Al abrir el modal de conversión, cargar presupuestos no convertidos
+  useEffect(() => {
+    if (!showConvertModal) return;
+    setLoadingPresupuestos(true);
+    api.getPresupuestos({ limit: 1000 })
+      .then(r => {
+        const all = r.data.presupuestos || [];
+        // Mostrar primero los aceptados, luego enviados/borradores; ocultar convertidos.
+        const elegibles = all.filter(p => p.estado !== 'convertido');
+        const orden = { aceptado: 0, enviado: 1, borrador: 2, vencido: 3, rechazado: 4 };
+        elegibles.sort((a, b) => (orden[a.estado] ?? 9) - (orden[b.estado] ?? 9));
+        setPresupuestosDisponibles(elegibles);
+      })
+      .finally(() => setLoadingPresupuestos(false));
+  }, [showConvertModal]);
+
+  const convertirDesdePresupuesto = async (p) => {
+    if (!window.confirm(`Convertir el presupuesto de ${p.cliente_nombre} (${formatGs(p.total)}) en venta?\n\nSe descontará stock automáticamente.`)) return;
+    try {
+      await api.convertirPresupuesto(p.id);
+      setShowConvertModal(false);
+      loadData();
+      alert('Venta creada desde presupuesto.');
+    } catch (e) { alert(formatApiError(e.response?.data?.detail)); }
+  };
 
   const loadData = useCallback(() => {
     setLoading(true);
@@ -1678,9 +1729,16 @@ function VentasView({ user }) {
     <div className="space-y-6" data-testid="ventas-view">
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-heading font-semibold">Ventas</h2>
-        <button onClick={openNew} className="flex items-center gap-2 px-4 py-2 bg-[#E63946] text-white rounded-lg hover:bg-[#D90429]" data-testid="add-venta-btn">
-          <Plus size={18} /> Nueva Venta
-        </button>
+        <div className="flex gap-2">
+          {canUsePresupuestos && (
+            <button onClick={() => setShowConvertModal(true)} className="flex items-center gap-2 px-4 py-2 border border-border rounded-lg hover:bg-muted" title="Crear venta a partir de un presupuesto aceptado">
+              <FileText size={18} /> Desde presupuesto
+            </button>
+          )}
+          <button onClick={openNew} className="flex items-center gap-2 px-4 py-2 bg-[#E63946] text-white rounded-lg hover:bg-[#D90429]" data-testid="add-venta-btn">
+            <Plus size={18} /> Nueva Venta
+          </button>
+        </div>
       </div>
       <div className="relative max-w-md">
         <MagnifyingGlass size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
@@ -1765,6 +1823,40 @@ function VentasView({ user }) {
               </table>
             </div>
             {selectedVenta.observaciones && <p className="text-sm text-muted-foreground">Obs: {selectedVenta.observaciones}</p>}
+          </div>
+        )}
+      </Modal>
+
+      {/* Modal: Convertir Presupuesto en Venta */}
+      <Modal isOpen={showConvertModal} onClose={() => setShowConvertModal(false)} title="Crear venta desde presupuesto" size="lg">
+        {loadingPresupuestos ? (
+          <div className="text-center py-8 text-muted-foreground">Cargando presupuestos...</div>
+        ) : presupuestosDisponibles.length === 0 ? (
+          <div className="text-center py-8 text-muted-foreground">
+            No hay presupuestos disponibles para convertir.
+          </div>
+        ) : (
+          <div className="space-y-2 max-h-[480px] overflow-y-auto">
+            <p className="text-xs text-muted-foreground">Aceptados primero. Hacé click para convertir en venta (se descuenta stock).</p>
+            {presupuestosDisponibles.map(p => {
+              const estadoCfg = ESTADO_BADGE[p.estado] || ESTADO_BADGE.borrador;
+              return (
+                <button key={p.id}
+                  onClick={() => convertirDesdePresupuesto(p)}
+                  className="w-full text-left border border-border rounded-lg p-3 hover:bg-muted flex items-center justify-between gap-4">
+                  <div className="min-w-0">
+                    <div className="font-medium truncate">{p.cliente_nombre}</div>
+                    <div className="text-xs text-muted-foreground">
+                      {formatFechaPY(p.fecha)} · {(p.items || []).length} ítems
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="font-mono font-semibold">{formatGs(p.total)}</div>
+                    <span className="badge text-xs" style={{ background: estadoCfg.bg, color: estadoCfg.fg }}>{estadoCfg.label}</span>
+                  </div>
+                </button>
+              );
+            })}
           </div>
         )}
       </Modal>
@@ -2213,6 +2305,27 @@ function ClientesView({ user }) {
   const [filterCantMin, setFilterCantMin]       = useState('');
   const [filterCiudad, setFilterCiudad]         = useState('');
   const [filterTipo, setFilterTipo]             = useState('');
+  // Ordenamiento (persistido en localStorage)
+  const SORT_KEY = 'pds.clientes.sort';
+  const [sort, setSort] = useState(() => {
+    try {
+      const raw = localStorage.getItem(SORT_KEY);
+      if (raw) return JSON.parse(raw);
+    } catch {}
+    return { by: null, dir: 'asc' };
+  });
+  useEffect(() => {
+    try { localStorage.setItem(SORT_KEY, JSON.stringify(sort)); } catch {}
+  }, [sort]);
+  const toggleSort = (field) => {
+    setSort(s => s.by === field
+      ? { by: field, dir: s.dir === 'asc' ? 'desc' : 'asc' }
+      : { by: field, dir: 'asc' });
+  };
+  const SortIcon = ({ field }) => {
+    if (sort.by !== field) return <span className="text-muted-foreground ml-1 text-xs">↕</span>;
+    return <span className="text-[#E63946] ml-1">{sort.dir === 'asc' ? '↑' : '↓'}</span>;
+  };
   // Modales
   const [showModal, setShowModal]       = useState(false);
   const [showHistorial, setShowHistorial] = useState(false);
@@ -2297,6 +2410,47 @@ function ClientesView({ user }) {
     return true;
   });
 
+  // ── Ordenamiento por columna (sobre los datos ya filtrados) ──
+  // Por columna devolvemos el valor crudo "comparable":
+  //   - strings → minúsculas, '' al final
+  //   - números → number, null/undefined al final
+  //   - fechas  → timestamp (parseFecha evita el bug de timezone)
+  const sortValue = (c, field) => {
+    switch (field) {
+      case 'nombre':
+      case 'ciudad':
+      case 'tipo':
+      case 'ultimo_producto':
+        return (c[field] || '').toString().toLowerCase();
+      case 'cantidad_compras':
+        return Number(c.cantidad_compras) || 0;
+      case 'total_comprado':
+        return Number(c.total_comprado) || 0;
+      case 'ultima_venta_monto':
+        return Number(c.ultima_venta_monto) || 0;
+      case 'ultima_venta_fecha':
+        return c.ultima_venta_fecha ? parseFecha(c.ultima_venta_fecha).getTime() : 0;
+      default:
+        return '';
+    }
+  };
+  const sorted = (() => {
+    if (!sort.by) return filtrados;
+    const arr = [...filtrados];
+    const dir = sort.dir === 'asc' ? 1 : -1;
+    arr.sort((a, b) => {
+      const va = sortValue(a, sort.by);
+      const vb = sortValue(b, sort.by);
+      // Empujar strings vacíos / 0 / fecha 0 al final, salvo en orden inverso
+      if (va === '' && vb !== '') return 1;
+      if (vb === '' && va !== '') return -1;
+      if (va < vb) return -1 * dir;
+      if (va > vb) return  1 * dir;
+      return 0;
+    });
+    return arr;
+  })();
+
   const hasActiveFilters = filterFechaDesde || filterFechaHasta || filterTotalMin || filterCantMin || filterCiudad || filterTipo;
 
   const limpiarFiltros = () => {
@@ -2378,29 +2532,29 @@ function ClientesView({ user }) {
           <table className="data-table">
             <thead className="sticky top-0 bg-white">
               <tr>
-                <th>Nombre</th>
-                <th>Ciudad</th>
-                <th>Tipo</th>
-                <th className="text-center">Cant. Compras</th>
-                <th className="text-right">Total Comprado</th>
-                <th className="text-right">Última Venta</th>
-                <th className="text-right">Monto Últ. Venta</th>
-                <th>Último Producto</th>
+                <th className="cursor-pointer select-none hover:bg-muted/40" onClick={() => toggleSort('nombre')}>Nombre <SortIcon field="nombre" /></th>
+                <th className="cursor-pointer select-none hover:bg-muted/40" onClick={() => toggleSort('ciudad')}>Ciudad <SortIcon field="ciudad" /></th>
+                <th className="cursor-pointer select-none hover:bg-muted/40" onClick={() => toggleSort('tipo')}>Tipo <SortIcon field="tipo" /></th>
+                <th className="text-center cursor-pointer select-none hover:bg-muted/40" onClick={() => toggleSort('cantidad_compras')}>Cant. Compras <SortIcon field="cantidad_compras" /></th>
+                <th className="text-right cursor-pointer select-none hover:bg-muted/40" onClick={() => toggleSort('total_comprado')}>Total Comprado <SortIcon field="total_comprado" /></th>
+                <th className="text-right cursor-pointer select-none hover:bg-muted/40" onClick={() => toggleSort('ultima_venta_fecha')}>Última Venta <SortIcon field="ultima_venta_fecha" /></th>
+                <th className="text-right cursor-pointer select-none hover:bg-muted/40" onClick={() => toggleSort('ultima_venta_monto')}>Monto Últ. Venta <SortIcon field="ultima_venta_monto" /></th>
+                <th className="cursor-pointer select-none hover:bg-muted/40" onClick={() => toggleSort('ultimo_producto')}>Último Producto <SortIcon field="ultimo_producto" /></th>
                 <th className="text-center">Acciones</th>
               </tr>
             </thead>
             <tbody>
               {loading
                 ? <tr><td colSpan={9} className="text-center py-8 text-muted-foreground">Cargando...</td></tr>
-                : filtrados.length === 0
+                : sorted.length === 0
                 ? <tr><td colSpan={9} className="text-center py-8 text-muted-foreground">Sin clientes</td></tr>
-                : filtrados.map(c => (
+                : sorted.map(c => (
                   <tr key={c.id}>
                     <td>
                       <div className="font-medium">{c.nombre}</div>
                       {c.ruc && <div className="text-xs text-muted-foreground">RUC: {c.ruc}</div>}
                       {c.telefono && <div className="text-xs text-muted-foreground">{c.telefono}</div>}
-                      {c.ultimo_contacto && <div className="text-xs text-blue-500">📅 {new Date(c.ultimo_contacto).toLocaleDateString('es-PY')}</div>}
+                      {c.ultimo_contacto && <div className="text-xs text-blue-500">📅 {formatFechaPY(c.ultimo_contacto)}</div>}
                       {c.observaciones && <div className="text-xs text-muted-foreground italic truncate max-w-[160px]" title={c.observaciones}>{c.observaciones}</div>}
                     </td>
                     <td className="text-sm">{c.ciudad || '-'}</td>
@@ -2415,7 +2569,7 @@ function ClientesView({ user }) {
                     <td className="text-right font-mono font-semibold">{c.total_comprado ? formatGs(c.total_comprado) : <span className="text-muted-foreground">-</span>}</td>
                     <td className="text-right text-sm">
                       {c.ultima_venta_fecha
-                        ? new Date(c.ultima_venta_fecha).toLocaleDateString('es-PY')
+                        ? formatFechaPY(c.ultima_venta_fecha)
                         : <span className="text-muted-foreground">-</span>}
                     </td>
                     <td className="text-right font-mono text-sm">
@@ -2743,13 +2897,11 @@ function LeadsView({ user }) {
                         : <span className="text-muted-foreground">-</span>}
                     </td>
                     <td className="text-sm whitespace-nowrap">
-                      {l.fecha_primer_contacto
-                        ? new Date(l.fecha_primer_contacto).toLocaleDateString('es-PY')
-                        : '-'}
+                      {formatFechaPY(l.fecha_primer_contacto)}
                     </td>
                     <td className="text-sm whitespace-nowrap">
                       {l.fecha_ultimo_contacto
-                        ? new Date(l.fecha_ultimo_contacto).toLocaleDateString('es-PY')
+                        ? formatFechaPY(l.fecha_ultimo_contacto)
                         : <span className="text-muted-foreground">-</span>}
                     </td>
                     <td className="text-sm text-muted-foreground max-w-[200px] truncate" title={l.observaciones}>
@@ -2798,6 +2950,589 @@ function LeadsView({ user }) {
           <div className="flex justify-end gap-3">
             <button onClick={() => setShowModal(false)} className="px-4 py-2 border border-border rounded-md hover:bg-muted">Cancelar</button>
             <button onClick={handleSave} className="bg-[#E63946] text-white px-4 py-2 rounded-md hover:bg-[#D90429]">{editItem ? 'Actualizar' : 'Crear'}</button>
+          </div>
+        </div>
+      </Modal>
+    </div>
+  );
+}
+
+// ==================== PRESUPUESTOS VIEW ====================
+// Reusa la misma forma que Ventas (cliente + items + observaciones), pero NO
+// descuenta stock. Cuando el presupuesto se acepta, un click llama al endpoint
+// /convertir y se crea la venta correspondiente con descuento de stock real.
+const PRESUPUESTO_ESTADOS = ['borrador', 'enviado', 'aceptado', 'rechazado', 'vencido', 'convertido'];
+const ESTADO_BADGE = {
+  borrador:   { bg: '#f3f4f6', fg: '#374151', label: 'Borrador'   },
+  enviado:    { bg: '#dbeafe', fg: '#1e40af', label: 'Enviado'    },
+  aceptado:   { bg: '#dcfce7', fg: '#166534', label: 'Aceptado'   },
+  rechazado:  { bg: '#fee2e2', fg: '#991b1b', label: 'Rechazado'  },
+  vencido:    { bg: '#fef3c7', fg: '#92400e', label: 'Vencido'    },
+  convertido: { bg: '#ede9fe', fg: '#5b21b6', label: 'Convertido' },
+};
+
+function PresupuestosView({ user, setActiveView }) {
+  const [presupuestos, setPresupuestos] = useState([]);
+  const [loading, setLoading]           = useState(true);
+  const [search, setSearch]             = useState('');
+  const [filterEstado, setFilterEstado] = useState('');
+
+  // Modales
+  const [showModal, setShowModal]             = useState(false);
+  const [showDetailModal, setShowDetailModal] = useState(false);
+  const [editItem, setEditItem]               = useState(null);
+  const [selected, setSelected]               = useState(null);
+
+  // Catálogos para crear/editar
+  const [clientes, setClientes]   = useState([]);
+  const [productos, setProductos] = useState([]);
+  const [prodSearch, setProdSearch] = useState('');
+  const [showProdSearch, setShowProdSearch] = useState(false);
+
+  const emptyForm = () => ({
+    cliente_id: '', cliente_nombre: '',
+    fecha: new Date().toISOString().split('T')[0],
+    fecha_validez: '',
+    items: [], observaciones: '', estado: 'borrador',
+  });
+  const [form, setForm] = useState(emptyForm());
+
+  const isAdmin   = user?.role === 'admin';
+  const canCreate = hasPermission(user, 'presupuestos', 'crear')   || isAdmin;
+  const canEdit   = hasPermission(user, 'presupuestos', 'editar')  || isAdmin;
+  const canDelete = hasPermission(user, 'presupuestos', 'eliminar')|| isAdmin;
+  const canVender = hasPermission(user, 'ventas', 'crear')         || isAdmin;
+
+  const loadData = useCallback(() => {
+    setLoading(true);
+    api.getPresupuestos({ estado: filterEstado || undefined, limit: 1000 })
+      .then(r => setPresupuestos(r.data.presupuestos || []))
+      .finally(() => setLoading(false));
+  }, [filterEstado]);
+  useEffect(() => { loadData(); }, [loadData]);
+
+  const openNew = async () => {
+    const [cRes, pRes] = await Promise.all([api.getClientes({}), api.getProductos({ limit: 1000 })]);
+    setClientes(cRes.data.clientes || []);
+    setProductos(pRes.data.productos || []);
+    setEditItem(null);
+    setForm(emptyForm());
+    setProdSearch('');
+    setShowModal(true);
+  };
+
+  const openEdit = async (p) => {
+    if (p.estado === 'convertido') { alert('Este presupuesto ya fue convertido en venta. No se puede editar.'); return; }
+    const [cRes, pRes] = await Promise.all([api.getClientes({}), api.getProductos({ limit: 1000 })]);
+    setClientes(cRes.data.clientes || []);
+    setProductos(pRes.data.productos || []);
+    setEditItem(p);
+    setForm({
+      cliente_id:    p.cliente_id || '',
+      cliente_nombre:p.cliente_nombre || '',
+      fecha:         p.fecha ? p.fecha.split('T')[0] : new Date().toISOString().split('T')[0],
+      fecha_validez: p.fecha_validez ? p.fecha_validez.split('T')[0] : '',
+      items: (p.items || []).map(i => ({
+        producto_id: i.producto_id, codigo: i.codigo, nombre: i.nombre, variante: i.variante || '',
+        cantidad: i.cantidad, precio_unitario: i.precio_unitario,
+        costo_unitario: i.costo_unitario || 0, iva_pct: i.iva_pct || 10,
+      })),
+      observaciones: p.observaciones || '',
+      estado: p.estado || 'borrador',
+    });
+    setShowModal(true);
+  };
+
+  const openDetail = (p) => { setSelected(p); setShowDetailModal(true); };
+
+  const filteredProds = prodSearch.length >= 1
+    ? productos.filter(p =>
+        p.codigo?.toLowerCase().includes(prodSearch.toLowerCase()) ||
+        p.nombre?.toLowerCase().includes(prodSearch.toLowerCase()) ||
+        p.variante?.toLowerCase().includes(prodSearch.toLowerCase()))
+    : [];
+
+  const addItem = (prod) => {
+    if (form.items.find(i => i.producto_id === prod.id)) { setProdSearch(''); setShowProdSearch(false); return; }
+    setForm({ ...form, items: [...form.items, {
+      producto_id: prod.id, codigo: prod.codigo, nombre: prod.nombre, variante: prod.variante || '',
+      cantidad: 1, precio_unitario: prod.precio_con_iva, costo_unitario: prod.costo || 0, iva_pct: prod.iva_pct || 10
+    }]});
+    setProdSearch(''); setShowProdSearch(false);
+  };
+  const removeItem = (idx) => setForm({ ...form, items: form.items.filter((_, i) => i !== idx) });
+  const updateItemQty   = (idx, qty)   => { const items = [...form.items]; items[idx] = { ...items[idx], cantidad: Math.max(1, parseInt(qty) || 1) }; setForm({ ...form, items }); };
+  const updateItemPrice = (idx, price) => { const items = [...form.items]; items[idx] = { ...items[idx], precio_unitario: parseFloat(price) || 0 }; setForm({ ...form, items }); };
+
+  const total = form.items.reduce((s, i) => s + i.precio_unitario * i.cantidad, 0);
+  const utilidadTotal = form.items.reduce((s, i) => s + (i.precio_unitario - (i.costo_unitario || 0)) * i.cantidad, 0);
+
+  const handleSave = async () => {
+    if (!form.cliente_id || form.items.length === 0) return alert('Seleccione cliente y agregue productos');
+    try {
+      if (editItem) await api.updatePresupuesto(editItem.id, form);
+      else          await api.createPresupuesto(form);
+      setShowModal(false); loadData();
+    } catch (e) { alert(formatApiError(e.response?.data?.detail)); }
+  };
+
+  const handleDelete = async (id) => {
+    if (!window.confirm('¿Eliminar este presupuesto?')) return;
+    try { await api.deletePresupuesto(id); loadData(); }
+    catch (e) { alert(formatApiError(e.response?.data?.detail)); }
+  };
+
+  const handleEstado = async (id, estado) => {
+    try { await api.setPresupuestoEstado(id, estado); loadData(); }
+    catch (e) { alert(formatApiError(e.response?.data?.detail)); }
+  };
+
+  const handleConvertir = async (p) => {
+    if (!canVender) return alert('No tenés permiso para crear ventas');
+    if (!window.confirm(`Convertir el presupuesto de ${p.cliente_nombre} (${formatGs(p.total)}) en una venta?\n\nSe descontará stock automáticamente.`)) return;
+    try {
+      const r = await api.convertirPresupuesto(p.id);
+      alert(`Venta creada (Gs. ${Math.round(r.data.total).toLocaleString('es-PY')}). Te llevamos al módulo de Ventas.`);
+      loadData();
+      if (typeof setActiveView === 'function') setActiveView('ventas');
+    } catch (e) { alert(formatApiError(e.response?.data?.detail)); }
+  };
+
+  // ── Construir PDF del presupuesto (jsPDF + autotable) ──
+  // `mode` = 'download' guarda el archivo, 'print' lo abre en nueva pestaña
+  // listo para imprimir.
+  const buildPresupuestoPdf = (p) => {
+    const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+    const marginX = 14;
+    let y = 16;
+
+    // Encabezado
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(16);
+    doc.text('PRESUPUESTO', marginX, y);
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'normal');
+    doc.text(`N° ${p.id || '-'}`, 200 - marginX, y, { align: 'right' });
+    y += 6;
+    doc.setDrawColor(230, 57, 70);  // #E63946
+    doc.setLineWidth(0.5);
+    doc.line(marginX, y, 200 - marginX, y);
+    y += 6;
+
+    // Empresa (placeholder — el sistema no tiene datos fiscales)
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(12);
+    doc.text('PDS — Insumos Odontológicos', marginX, y);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9);
+    y += 4; doc.text('Sistema de Gestión PDS', marginX, y);
+    y += 8;
+
+    // Datos cliente / fechas / estado
+    const estadoLabel = (ESTADO_BADGE[p.estado] || ESTADO_BADGE.borrador).label;
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Cliente:', marginX, y);
+    doc.setFont('helvetica', 'normal');
+    doc.text(p.cliente_nombre || '-', marginX + 22, y);
+
+    doc.setFont('helvetica', 'bold');
+    doc.text('Fecha:', 120, y);
+    doc.setFont('helvetica', 'normal');
+    doc.text(formatFechaPY(p.fecha), 138, y);
+    y += 6;
+
+    doc.setFont('helvetica', 'bold');
+    doc.text('Estado:', marginX, y);
+    doc.setFont('helvetica', 'normal');
+    doc.text(estadoLabel, marginX + 22, y);
+
+    if (p.fecha_validez) {
+      doc.setFont('helvetica', 'bold');
+      doc.text('Validez:', 120, y);
+      doc.setFont('helvetica', 'normal');
+      doc.text(formatFechaPY(p.fecha_validez), 138, y);
+    }
+    y += 8;
+
+    // Tabla de items
+    const items = p.items || [];
+    const body = items.map(it => {
+      const subtotal = (it.precio_unitario || 0) * (it.cantidad || 0);
+      const nombre = it.nombre + (it.variante ? ` (${it.variante})` : '');
+      return [
+        it.codigo || '-',
+        nombre,
+        String(it.cantidad ?? 0),
+        formatGs(it.precio_unitario || 0),
+        formatGs(subtotal),
+      ];
+    });
+    doc.autoTable({
+      startY: y,
+      head: [['Código', 'Producto', 'Cant.', 'Precio', 'Subtotal']],
+      body,
+      styles: { fontSize: 9, cellPadding: 2 },
+      headStyles: { fillColor: [230, 57, 70], textColor: 255 },
+      columnStyles: {
+        0: { cellWidth: 22 },
+        2: { cellWidth: 16, halign: 'center' },
+        3: { cellWidth: 32, halign: 'right' },
+        4: { cellWidth: 34, halign: 'right' },
+      },
+      margin: { left: marginX, right: marginX },
+    });
+
+    let endY = doc.lastAutoTable.finalY + 6;
+    // Totales
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(11);
+    doc.text('TOTAL:', 140, endY, { align: 'right' });
+    doc.text(formatGs(p.total || 0), 200 - marginX, endY, { align: 'right' });
+    endY += 8;
+
+    // Observaciones
+    if (p.observaciones) {
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(10);
+      doc.text('Observaciones:', marginX, endY);
+      endY += 5;
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(9);
+      const lines = doc.splitTextToSize(p.observaciones, 200 - 2 * marginX);
+      doc.text(lines, marginX, endY);
+      endY += lines.length * 4 + 4;
+    }
+
+    // Pie
+    doc.setFontSize(8);
+    doc.setTextColor(120);
+    doc.text(`Generado el ${new Date().toLocaleString('es-PY')}`, marginX, 287);
+    return doc;
+  };
+
+  const exportPresupuestoPdf = (p, mode = 'download') => {
+    try {
+      const doc = buildPresupuestoPdf(p);
+      const filename = `Presupuesto_${(p.cliente_nombre || 'cliente').replace(/[^\w]+/g, '_')}_${(p.fecha || '').slice(0, 10)}.pdf`;
+      if (mode === 'print') {
+        // Abre en nueva pestaña; el usuario aprieta Ctrl+P
+        window.open(doc.output('bloburl'), '_blank');
+      } else {
+        doc.save(filename);
+      }
+    } catch (e) {
+      console.error('[presupuesto pdf]', e);
+      alert('No se pudo generar el PDF');
+    }
+  };
+
+  const filtered = presupuestos.filter(p =>
+    !search ||
+    p.cliente_nombre?.toLowerCase().includes(search.toLowerCase()) ||
+    p.fecha?.includes(search)
+  );
+
+  return (
+    <div className="space-y-6" data-testid="presupuestos-view">
+      <div className="flex items-center justify-between">
+        <h2 className="text-2xl font-heading font-semibold">Presupuestos</h2>
+        {canCreate && (
+          <button onClick={openNew} className="flex items-center gap-2 px-4 py-2 bg-[#E63946] text-white rounded-lg hover:bg-[#D90429]">
+            <Plus size={18} /> Nuevo Presupuesto
+          </button>
+        )}
+      </div>
+
+      <div className="flex gap-3 items-center">
+        <div className="relative flex-1 max-w-md">
+          <MagnifyingGlass size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+          <input type="text" placeholder="Buscar por cliente, fecha..." value={search} onChange={(e) => setSearch(e.target.value)} className="form-input pl-10" />
+        </div>
+        <select value={filterEstado} onChange={e => setFilterEstado(e.target.value)} className="form-input max-w-[200px]">
+          <option value="">Todos los estados</option>
+          {PRESUPUESTO_ESTADOS.map(s => <option key={s} value={s}>{ESTADO_BADGE[s]?.label || s}</option>)}
+        </select>
+      </div>
+
+      <div className="bg-white border border-border rounded-md">
+        <div className="overflow-x-auto max-h-[600px]">
+          <table className="data-table">
+            <thead className="sticky top-0 bg-white">
+              <tr>
+                <th>Fecha</th>
+                <th>Cliente</th>
+                <th>Productos</th>
+                <th className="text-right">Total</th>
+                <th className="text-center">Validez</th>
+                <th className="text-center">Estado</th>
+                <th className="text-center">Acciones</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? <tr><td colSpan={7} className="text-center py-8">Cargando...</td></tr>
+              : filtered.length === 0 ? <tr><td colSpan={7} className="text-center py-8 text-muted-foreground">Sin presupuestos</td></tr>
+              : filtered.map(p => {
+                const estadoCfg = ESTADO_BADGE[p.estado] || ESTADO_BADGE.borrador;
+                const itemsLabel = (p.items || []).length === 0 ? '-'
+                  : `${p.items[0].nombre}${p.items.length > 1 ? ` +${p.items.length - 1} más` : ''}`;
+                const isConvertido = p.estado === 'convertido';
+                return (
+                  <tr key={p.id}>
+                    <td className="whitespace-nowrap">{formatFechaPY(p.fecha)}</td>
+                    <td className="font-medium">{p.cliente_nombre}</td>
+                    <td className="text-sm max-w-xs truncate" title={itemsLabel}>{itemsLabel}</td>
+                    <td className="text-right font-mono font-semibold">{formatGs(p.total)}</td>
+                    <td className="text-center text-xs">{p.fecha_validez ? formatFechaPY(p.fecha_validez) : <span className="text-muted-foreground">-</span>}</td>
+                    <td className="text-center">
+                      <span className="badge" style={{ background: estadoCfg.bg, color: estadoCfg.fg }}>{estadoCfg.label}</span>
+                    </td>
+                    <td className="text-center">
+                      <div className="flex items-center justify-center gap-1">
+                        <button onClick={() => openDetail(p)} className="p-1 hover:bg-blue-50 rounded text-blue-600" title="Ver detalle"><Eye size={16} /></button>
+                        <button onClick={() => exportPresupuestoPdf(p, 'print')} className="p-1 hover:bg-purple-50 rounded text-purple-600" title="Imprimir presupuesto"><FilePdf size={16} /></button>
+                        {/* Cambiar estado rápido */}
+                        {!isConvertido && canEdit && (
+                          <select
+                            value={p.estado}
+                            onChange={e => handleEstado(p.id, e.target.value)}
+                            title="Cambiar estado"
+                            className="text-xs border border-border rounded px-1 py-0.5 bg-white"
+                          >
+                            {PRESUPUESTO_ESTADOS.filter(s => s !== 'convertido').map(s =>
+                              <option key={s} value={s}>{ESTADO_BADGE[s]?.label || s}</option>
+                            )}
+                          </select>
+                        )}
+                        {/* Convertir en venta */}
+                        {!isConvertido && canVender && (
+                          <button onClick={() => handleConvertir(p)} className="p-1 hover:bg-green-50 rounded text-green-600" title="Convertir en venta">
+                            <ShoppingCart size={16} />
+                          </button>
+                        )}
+                        {!isConvertido && canEdit   && <button onClick={() => openEdit(p)}      className="p-1 hover:bg-yellow-50 rounded text-yellow-600" title="Editar"><Pencil size={16} /></button>}
+                        {!isConvertido && canDelete && <button onClick={() => handleDelete(p.id)} className="p-1 hover:bg-red-50 rounded text-red-600"    title="Eliminar"><Trash size={16} /></button>}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Modal detalle */}
+      <Modal isOpen={showDetailModal} onClose={() => setShowDetailModal(false)} title="Detalle del Presupuesto" size="xl">
+        {selected && (
+          <div className="space-y-4">
+            <div className="grid grid-cols-4 gap-4 text-sm bg-muted/30 rounded-lg p-3">
+              <div><span className="text-muted-foreground">Cliente</span><div className="font-medium">{selected.cliente_nombre}</div></div>
+              <div><span className="text-muted-foreground">Fecha</span><div className="font-medium">{formatFechaPY(selected.fecha)}</div></div>
+              <div><span className="text-muted-foreground">Validez</span><div className="font-medium">{selected.fecha_validez ? formatFechaPY(selected.fecha_validez) : '-'}</div></div>
+              <div>
+                <span className="text-muted-foreground">Estado</span>
+                <div>
+                  <span className="badge" style={{ background: (ESTADO_BADGE[selected.estado] || ESTADO_BADGE.borrador).bg, color: (ESTADO_BADGE[selected.estado] || ESTADO_BADGE.borrador).fg }}>
+                    {(ESTADO_BADGE[selected.estado] || ESTADO_BADGE.borrador).label}
+                  </span>
+                </div>
+              </div>
+            </div>
+            {selected.venta_id && (
+              <div className="text-xs text-muted-foreground flex items-center gap-1">
+                <LinkSimple size={12} /> Venta vinculada: <span className="font-mono">{selected.venta_id}</span>
+              </div>
+            )}
+            <div className="overflow-x-auto">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Producto</th>
+                    <th className="text-center w-16">Cant.</th>
+                    <th className="text-right w-32">Precio</th>
+                    <th className="text-right w-32">Costo Unit.</th>
+                    <th className="text-right w-32">Subtotal</th>
+                    <th className="text-right w-28">Utilidad</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(selected.items || []).map((item, i) => {
+                    const subtotal   = item.precio_unitario * item.cantidad;
+                    const costoTotal = (item.costo_unitario || 0) * item.cantidad;
+                    const utilidad   = subtotal - costoTotal;
+                    return (
+                      <tr key={i}>
+                        <td>
+                          <div className="font-medium">{item.nombre}</div>
+                          {item.variante && <div className="text-xs text-muted-foreground">Variante: {item.variante}</div>}
+                        </td>
+                        <td className="text-center">{item.cantidad}</td>
+                        <td className="text-right font-mono">{formatGs(item.precio_unitario)}</td>
+                        <td className="text-right font-mono text-muted-foreground">{formatGs(item.costo_unitario || 0)}</td>
+                        <td className="text-right font-mono font-medium">{formatGs(subtotal)}</td>
+                        <td className={`text-right font-mono font-medium ${utilidad >= 0 ? 'text-green-600' : 'text-red-600'}`}>{formatGs(utilidad)}</td>
+                      </tr>
+                    );
+                  })}
+                  <tr className="font-semibold bg-muted">
+                    <td colSpan={4} className="text-right">TOTAL:</td>
+                    <td className="text-right text-lg font-mono">{formatGs(selected.total)}</td>
+                    <td className="text-right text-lg font-mono text-green-600">{formatGs(selected.utilidad || 0)}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            {selected.observaciones && <p className="text-sm text-muted-foreground">Obs: {selected.observaciones}</p>}
+            {/* Acciones del detalle */}
+            <div className="flex justify-between items-center pt-2 border-t border-border gap-2 flex-wrap">
+              <div className="flex gap-2">
+                <button onClick={() => exportPresupuestoPdf(selected, 'print')}
+                  className="flex items-center gap-2 px-4 py-2 border border-border rounded-md hover:bg-muted text-sm">
+                  <FilePdf size={16} /> Imprimir
+                </button>
+                <button onClick={() => exportPresupuestoPdf(selected, 'download')}
+                  className="flex items-center gap-2 px-4 py-2 border border-border rounded-md hover:bg-muted text-sm">
+                  <Download size={16} /> Descargar PDF
+                </button>
+              </div>
+              {selected.estado !== 'convertido' && canVender && (
+                <button onClick={() => { setShowDetailModal(false); handleConvertir(selected); }}
+                  className="flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700">
+                  <ShoppingCart size={16} /> Convertir en venta
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* Modal crear / editar (mismo layout que VentasView para consistencia) */}
+      <Modal isOpen={showModal} onClose={() => setShowModal(false)} title={editItem ? 'Editar Presupuesto' : 'Nuevo Presupuesto'} size="xl">
+        <div className="space-y-4">
+          <div className="grid grid-cols-4 gap-4">
+            <div className="form-group col-span-2">
+              <label className="form-label">Cliente *</label>
+              <select value={form.cliente_id} onChange={(e) => {
+                const c = clientes.find(cl => cl.id === e.target.value);
+                setForm({ ...form, cliente_id: e.target.value, cliente_nombre: c?.nombre || '' });
+              }} className="form-input">
+                <option value="">Seleccionar cliente...</option>
+                {clientes.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+              </select>
+            </div>
+            <div className="form-group">
+              <label className="form-label">Fecha *</label>
+              <input type="date" value={form.fecha} onChange={(e) => setForm({ ...form, fecha: e.target.value })} className="form-input" />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Validez (opc.)</label>
+              <input type="date" value={form.fecha_validez} onChange={(e) => setForm({ ...form, fecha_validez: e.target.value })} className="form-input" />
+            </div>
+          </div>
+          <div className="form-group">
+            <label className="form-label">Observaciones</label>
+            <input type="text" value={form.observaciones} onChange={(e) => setForm({ ...form, observaciones: e.target.value })} className="form-input" />
+          </div>
+
+          <div className="border border-border rounded-lg p-4">
+            <h4 className="font-semibold text-sm mb-3">Agregar Productos</h4>
+            <div className="relative mb-3">
+              <MagnifyingGlass size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+              <input
+                type="text" placeholder="Buscar por código, nombre o variante..."
+                value={prodSearch}
+                onChange={(e) => { setProdSearch(e.target.value); setShowProdSearch(true); }}
+                onFocus={() => setShowProdSearch(true)}
+                className="form-input pl-9"
+              />
+              {showProdSearch && filteredProds.length > 0 && (
+                <div className="absolute z-50 top-full left-0 right-0 bg-white border border-border rounded-lg shadow-lg max-h-48 overflow-y-auto mt-1">
+                  {filteredProds.map(p => (
+                    <button key={p.id} onClick={() => addItem(p)}
+                      className="w-full text-left px-3 py-2 hover:bg-muted text-sm border-b last:border-0">
+                      <span className="font-medium">{p.codigo} | {p.nombre}</span>
+                      {p.variante && <span className="text-muted-foreground"> | Variante: {p.variante}</span>}
+                      <span className="float-right text-muted-foreground">Stock: {p.stock} | {formatGs(p.precio_con_iva)}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            {form.items.length > 0 && (
+              <div className="overflow-x-auto">
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>Producto</th>
+                      <th className="text-center w-24">Cant.</th>
+                      <th className="text-right w-36">Precio Venta</th>
+                      <th className="text-right w-32">Costo</th>
+                      <th className="text-right w-36">Subtotal</th>
+                      <th className="text-right w-28">Utilidad</th>
+                      <th className="w-10"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {form.items.map((item, i) => {
+                      const subtotal = item.precio_unitario * item.cantidad;
+                      const costoTotal = (item.costo_unitario || 0) * item.cantidad;
+                      const utilidad = subtotal - costoTotal;
+                      return (
+                        <tr key={i}>
+                          <td>
+                            <div className="font-medium text-sm">{item.nombre}</div>
+                            {item.variante && <div className="text-xs text-muted-foreground">Variante: {item.variante}</div>}
+                          </td>
+                          <td className="text-center">
+                            <input type="number" value={item.cantidad} min="1"
+                              onChange={(e) => updateItemQty(i, e.target.value)}
+                              className="form-input text-center p-1 w-20" />
+                          </td>
+                          <td className="text-right">
+                            <input type="number" value={item.precio_unitario} min="0"
+                              onChange={(e) => updateItemPrice(i, e.target.value)}
+                              className="form-input text-right p-1 w-32" />
+                          </td>
+                          <td className="text-right font-mono text-muted-foreground text-sm">{formatGs(item.costo_unitario || 0)}</td>
+                          <td className="text-right font-mono font-medium">{formatGs(subtotal)}</td>
+                          <td className={`text-right font-mono font-medium text-sm ${utilidad >= 0 ? 'text-green-600' : 'text-red-600'}`}>{formatGs(utilidad)}</td>
+                          <td className="text-center">
+                            <button onClick={() => removeItem(i)} className="text-red-500 hover:text-red-700"><X size={16} /></button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    <tr className="font-semibold bg-muted">
+                      <td colSpan={4} className="text-right">TOTAL:</td>
+                      <td className="text-right text-lg font-mono">{formatGs(total)}</td>
+                      <td className="text-right font-mono text-green-600">{formatGs(utilidadTotal)}</td>
+                      <td></td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="form-group">
+              <label className="form-label">Estado</label>
+              <select value={form.estado} onChange={e => setForm({ ...form, estado: e.target.value })} className="form-input">
+                {PRESUPUESTO_ESTADOS.filter(s => s !== 'convertido').map(s =>
+                  <option key={s} value={s}>{ESTADO_BADGE[s]?.label || s}</option>
+                )}
+              </select>
+              <p className="text-xs text-muted-foreground mt-1">El estado "Convertido" se asigna automáticamente al pasarlo a Venta.</p>
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-3">
+            <button onClick={() => setShowModal(false)} className="px-4 py-2 border border-border rounded-md hover:bg-muted">Cancelar</button>
+            <button onClick={handleSave} disabled={!form.cliente_id || form.items.length === 0}
+              className="bg-[#E63946] text-white px-4 py-2 rounded-md hover:bg-[#D90429] disabled:opacity-50">
+              {editItem ? 'Actualizar Presupuesto' : 'Guardar Presupuesto'}
+            </button>
           </div>
         </div>
       </Modal>
@@ -3333,6 +4068,7 @@ const MODULOS_CONFIG = [
   { key: 'dashboard', label: 'Dashboard', acciones: ['ver'], siempreVisible: true },
   { key: 'estadisticas', label: 'Estadísticas', acciones: ['ver'] },
   { key: 'productos', label: 'Productos', acciones: ['ver', 'crear', 'editar', 'eliminar'] },
+  { key: 'presupuestos', label: 'Presupuestos', acciones: ['ver', 'crear', 'editar', 'eliminar'] },
   { key: 'ventas', label: 'Ventas', acciones: ['ver', 'crear'] },
   { key: 'compras', label: 'Compras', acciones: ['ver', 'crear'] },
   { key: 'clientes', label: 'Clientes', acciones: ['ver', 'crear', 'editar', 'eliminar'] },
@@ -3931,6 +4667,7 @@ function App() {
       case 'estadisticas': return <EstadisticasView />;
       case 'productos': return <ProductosView user={user} />;
       case 'ventas': return <VentasView user={user} />;
+      case 'presupuestos': return <PresupuestosView user={user} setActiveView={setActiveView} />;
       case 'compras': return <ComprasView user={user} />;
       case 'clientes': return <ClientesView user={user} />;
       case 'leads': return <LeadsView user={user} />;
